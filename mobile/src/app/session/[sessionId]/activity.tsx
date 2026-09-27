@@ -1,17 +1,19 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 
 import {
   Button,
   Card,
+  MetricTile,
+  MetricValue,
   Notice,
   Page,
   PageHeading,
-  Progress,
   Row,
+  StatusTag,
   wireframeStyles,
-} from '@/components/wireframe';
+} from '@/components/ui';
 import { useSessionStore } from '@/state/session-store';
 
 export default function ActivityScreen() {
@@ -61,32 +63,36 @@ export default function ActivityScreen() {
 
   return (
     <Page>
-      <Progress current={4} total={6} />
       <PageHeading
         eyebrow={paused ? 'Activity paused' : 'Activity in progress'}
         title="Frisbee"
+        highlight={paused ? 'PAUSED' : 'LIVE'}
         description="Move normally. AfterMotion is collecting demo load data without interrupting your session."
       />
-      <Card>
-        <Text style={wireframeStyles.metric}>{minutes}:{remainder}</Text>
-        <Row label="Motion Sleeve" value="Demo stream" />
-        <Row label="Samples" value={`${seconds * 50}`} />
+      <Card variant="data">
+        <StatusTag label={paused ? 'Paused' : 'Recording'} tone={paused ? 'warning' : 'active'} />
+        <MetricValue inverse>{minutes}:{remainder}</MetricValue>
+        <MetricTile label="Motion Sleeve" value={paused ? 'Paused' : 'Live'} highlighted />
+        <Row label="Samples collected" value={`${seconds * 50}`} icon="pulse-outline" inverse />
       </Card>
       {paused ? (
-        <Notice title="Session paused" body="Timing and demo sampling are paused." />
+        <Notice title="Session paused" body="Timing and demo sampling are paused." tone="warning" />
       ) : null}
-      <View style={wireframeStyles.actions}>
+      <View style={wireframeStyles.actionRow}>
         <Button
           label={paused ? 'Resume activity' : 'Pause'}
+          icon={paused ? 'play-outline' : 'pause-outline'}
           onPress={() => {
             const nextPaused = !paused;
             setPaused(nextPaused);
             setActivityStatus(sessionId, nextPaused ? 'paused' : 'active', seconds);
           }}
           variant="secondary"
+          style={wireframeStyles.actionButton}
         />
         <Button
           label="Finish activity"
+          icon="stop-outline"
           onPress={() => {
             finishActivity(sessionId, seconds);
             router.replace({
@@ -94,6 +100,8 @@ export default function ActivityScreen() {
               params: { sessionId },
             });
           }}
+          variant="highlight"
+          style={wireframeStyles.actionButton}
         />
       </View>
     </Page>

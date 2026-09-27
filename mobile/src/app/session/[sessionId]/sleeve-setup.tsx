@@ -12,8 +12,9 @@ import {
   Progress,
   Row,
   SectionTitle,
+  StatusTag,
   wireframeStyles,
-} from '@/components/wireframe';
+} from '@/components/ui';
 import { useSessionStore } from '@/state/session-store';
 
 export default function SleeveSetupScreen() {
@@ -27,9 +28,14 @@ export default function SleeveSetupScreen() {
       <PageHeading
         eyebrow="Activity setup"
         title="Prepare the Motion Sleeve"
+        highlight="READY TO MOVE"
         description="Choose how this prototype will record activity load."
       />
       <Card>
+        <StatusTag
+          label={mode === 'bluetooth' ? 'Not connected' : 'Ready'}
+          tone={mode === 'bluetooth' ? 'error' : 'complete'}
+        />
         <SectionTitle>Data source</SectionTitle>
         <View style={wireframeStyles.choiceGrid}>
           <Choice label="Demo" onPress={() => setMode('demo')} selected={mode === 'demo'} />
@@ -40,12 +46,17 @@ export default function SleeveSetupScreen() {
             selected={mode === 'bluetooth'}
           />
         </View>
-        <Row label="Motion Sleeve" value={mode === 'bluetooth' ? 'Not connected' : 'Ready'} />
+        <Row
+          label="Motion Sleeve"
+          value={mode === 'bluetooth' ? 'Not connected' : 'Ready'}
+          icon="shirt-outline"
+        />
       </Card>
       {mode === 'bluetooth' ? (
         <Notice
           title="Motion Sleeve not connected"
           body="Bluetooth hardware will be added later. Choose Demo or Manual to continue today."
+          tone="error"
         />
       ) : null}
       <Button
@@ -58,6 +69,7 @@ export default function SleeveSetupScreen() {
             params: { sessionId },
           });
         }}
+        variant="highlight"
       />
     </Page>
   );

@@ -10,14 +10,17 @@ import {
   Notice,
   Page,
   PageHeading,
-  Progress,
+  MeasurementProgress,
   Row,
   SectionTitle,
+  SideBadge,
+  StatusTag,
   Value,
   wireframeStyles,
-} from '@/components/wireframe';
+} from '@/components/ui';
 import type { KneeSide } from '@/domain/models';
 import { useSessionStore } from '@/state/session-store';
+import { formatScore } from '@/utils/format';
 
 type MeasurementPhase = 'baseline' | 'recovery';
 type MeasurementState =
@@ -133,32 +136,51 @@ export default function MeasurementScreen() {
               ? 'Save and view results'
               : 'Save baseline'
           : 'Restore ready state';
+  const progressValue =
+    measurementState === 'complete' ? 100 : measurementState === 'measuring' ? 64 : 12;
+  const noticeTone =
+    measurementState === 'complete'
+      ? 'success'
+      : measurementState === 'disconnected' || measurementState === 'movement'
+        ? 'error'
+        : measurementState === 'tooLoose' || measurementState === 'stabilizing'
+          ? 'warning'
+          : 'info';
 
   return (
     <Page>
-      <Progress current={phase === 'baseline' ? 2 : 5} total={6} />
       <PageHeading
         eyebrow={stageLabel}
         title={`${side === 'left' ? 'Left' : 'Right'} knee`}
         description="Position the band at the marked location and keep your leg still."
       />
-      <Notice title={copy.title} body={copy.body} />
+      <SideBadge side={side} injured={session?.injuredSide === side} />
+      <MeasurementProgress
+        label="Measurement progress"
+        value={progressValue}
+        detail={measurementState === 'complete' ? 'Complete' : '30 sec window'}
+      />
+      <Notice title={copy.title} body={copy.body} tone={noticeTone} />
       <Card>
-        <Row label="Source" value="Demo data" />
-        <Row label="Band tension" value={measurementState === 'tooLoose' ? 'Too loose' : 'Correct'} />
-        <Row label="Stability" value={measurementState === 'movement' ? 'Movement' : 'Stable'} />
-        <Row label="Window" value="30 sec" />
+        <StatusTag
+          label={measurementState === 'complete' ? 'Recorded' : 'Ready to capture'}
+          tone={measurementState === 'complete' ? 'complete' : 'active'}
+        />
+        <Row label="Source" value="Demo data" icon="radio-outline" />
+        <Row label="Band tension" value={measurementState === 'tooLoose' ? 'Too loose' : 'Correct'} icon="resize-outline" />
+        <Row label="Stability" value={measurementState === 'movement' ? 'Movement' : 'Stable'} icon="pulse-outline" />
+        <Row label="Window" value="30 sec" icon="timer-outline" />
       </Card>
 
       {measurementState === 'complete' ? (
         <>
-          <Card>
-            <Label>Demo reading</Label>
-            <Value>Stretch 2,418 · 33.4°C</Value>
+          <Card variant="data">
+            <Label inverse>Measurement result</Label>
+            <Value inverse>Stretch 2,418 · 33.4°C</Value>
           </Card>
           <Card>
             <SectionTitle>Symptoms</SectionTitle>
-            <Label>Pain · {pain}/10</Label>
+            <Label>Pain · {formatScore(pain)}</Label>
             <View style={wireframeStyles.choiceGrid}>
               {[0, 2, 4, 6, 8, 10].map((value) => (
                 <Choice
@@ -169,19 +191,25 @@ export default function MeasurementScreen() {
                 />
               ))}
             </View>
-            <Row label="Stiffness" value="2/10" />
-            <Row label="Subjective swelling" value="Mild" />
+            <Row label="Stiffness" value={formatScore(2)} icon="body-outline" />
+            <Row label="Subjective swelling" value="Mild" icon="water-outline" />
           </Card>
         </>
       ) : null}
 
       <View style={wireframeStyles.actions}>
-        <Button label={primaryLabel} onPress={primaryAction} />
+        <Button
+          label={primaryLabel}
+          onPress={primaryAction}
+          variant="highlight"
+          icon={measurementState === 'complete' ? 'save-outline' : 'scan-outline'}
+        />
         {measurementState === 'complete' ? (
           <Button
             label="Measure again"
+            icon="refresh-outline"
             onPress={() => setMeasurementState('ready')}
-            variant="text"
+            variant="secondary"
           />
         ) : null}
       </View>

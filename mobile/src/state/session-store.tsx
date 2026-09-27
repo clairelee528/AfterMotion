@@ -209,10 +209,22 @@ export function SessionStoreProvider({ children }: { children: ReactNode }) {
     checkpoint: string,
     pain: number,
   ) {
+    const recoveryTemperatureOffset: Record<string, number> = {
+      '0': 0.8,
+      '15': 0.65,
+      '30': 0.45,
+      '45': 0.25,
+      '60': 0.1,
+    };
+    const baselineTemperature = side === 'left' ? 33.4 : 33.7;
+    const demoTemperature =
+      phase === 'baseline'
+        ? baselineTemperature
+        : baselineTemperature + (recoveryTemperatureOffset[checkpoint] ?? 0.2);
     const measurement: StoredMeasurement = {
       recordedAt: new Date().toISOString(),
       stretchValue: 2418,
-      temperatureCelsius: side === 'left' ? 33.4 : 33.7,
+      temperatureCelsius: Number(demoTemperature.toFixed(2)),
       pain,
     };
     updateSession(sessionId, (session) => {

@@ -1,13 +1,28 @@
 import { Tabs } from 'expo-router';
-import { Text } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
-import { colors } from '@/theme/tokens';
+import { AppIcon, type AppIconName } from '@/components/icons';
+import { colors, radii } from '@/theme/tokens';
 
-const icons = {
-  training: '●',
-  history: '◫',
-  settings: '○',
-} as const;
+function TabIcon({
+  focused,
+  active,
+  inactive,
+}: {
+  focused: boolean;
+  active: AppIconName;
+  inactive: AppIconName;
+}) {
+  return (
+    <View style={[styles.iconContainer, focused && styles.selectedIconContainer]}>
+      <AppIcon
+        name={focused ? active : inactive}
+        size={21}
+        color={focused ? colors.highlightInk : colors.mutedInk}
+      />
+    </View>
+  );
+}
 
 export default function TabLayout() {
   return (
@@ -18,17 +33,21 @@ export default function TabLayout() {
         headerTitleStyle: { color: colors.ink, fontWeight: '700' },
         tabBarActiveTintColor: colors.ink,
         tabBarInactiveTintColor: colors.mutedInk,
+        tabBarLabelStyle: { fontSize: 12, fontWeight: '600' },
         tabBarStyle: {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
+          height: 78,
+          paddingBottom: 9,
+          paddingTop: 7,
         },
       }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'Training',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ color, fontSize: 17 }}>{icons.training}</Text>
+          tabBarIcon: ({ focused }) => (
+            <TabIcon focused={focused} active="barbell" inactive="barbell-outline" />
           ),
         }}
       />
@@ -36,8 +55,8 @@ export default function TabLayout() {
         name="history"
         options={{
           title: 'History',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ color, fontSize: 17 }}>{icons.history}</Text>
+          tabBarIcon: ({ focused }) => (
+            <TabIcon focused={focused} active="time" inactive="time-outline" />
           ),
         }}
       />
@@ -45,11 +64,24 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ color, fontSize: 17 }}>{icons.settings}</Text>
+          tabBarIcon: ({ focused }) => (
+            <TabIcon focused={focused} active="settings" inactive="settings-outline" />
           ),
         }}
       />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  iconContainer: {
+    alignItems: 'center',
+    borderRadius: radii.pill,
+    height: 30,
+    justifyContent: 'center',
+    width: 46,
+  },
+  selectedIconContainer: {
+    backgroundColor: colors.highlight,
+  },
+});

@@ -6,12 +6,12 @@ import {
   Button,
   Card,
   Choice,
-  Label,
+  MetricTile,
   Page,
   PageHeading,
   SectionTitle,
   wireframeStyles,
-} from '@/components/wireframe';
+} from '@/components/ui';
 import type { SubjectiveSwelling } from '@/domain/models';
 import { useSessionStore } from '@/state/session-store';
 
@@ -37,11 +37,12 @@ export default function FeelingsScreen() {
       <PageHeading
         eyebrow={stage}
         title="Edit how your knee felt"
+        highlight="CHECK-IN"
         description="This changes your subjective check-in only. You do not need to repeat the sensor measurement."
       />
       <Card>
         <SectionTitle>Pain</SectionTitle>
-        <Label>{pain}/10</Label>
+        <MetricTile label="Pain score" value={String(pain)} unit="/ 10" highlighted />
         <View style={wireframeStyles.choiceGrid}>
           {[0, 2, 4, 6, 8, 10].map((value) => (
             <Choice key={value} label={String(value)} selected={pain === value} onPress={() => setPain(value)} />
@@ -50,7 +51,7 @@ export default function FeelingsScreen() {
       </Card>
       <Card>
         <SectionTitle>Stiffness</SectionTitle>
-        <Label>{stiffness}/10</Label>
+        <MetricTile label="Stiffness score" value={String(stiffness)} unit="/ 10" />
         <View style={wireframeStyles.choiceGrid}>
           {[0, 2, 4, 6, 8, 10].map((value) => (
             <Choice key={value} label={String(value)} selected={stiffness === value} onPress={() => setStiffness(value)} />
@@ -72,15 +73,18 @@ export default function FeelingsScreen() {
       </Card>
       <Button
         label="Save feelings"
+        icon="save-outline"
         onPress={() => {
           saveFeelings(sessionId, checkpoint, { pain, stiffness, swelling });
           router.replace({ pathname: '/session/[sessionId]', params: { sessionId } });
         }}
+        variant="highlight"
       />
       <Button
         label="Cancel"
+        icon="close-outline"
         onPress={() => router.back()}
-        variant="text"
+        variant="secondary"
       />
     </Page>
   );

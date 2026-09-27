@@ -9,10 +9,13 @@ import {
   Page,
   PageHeading,
   SectionTitle,
+  SideBadge,
+  StatusTag,
   wireframeStyles,
-} from '@/components/wireframe';
+} from '@/components/ui';
 import type { ActivityType, KneeSide, MeasurementSource } from '@/domain/models';
 import { useSessionStore } from '@/state/session-store';
+import { ActivityIcon, AppIcon } from '@/components/icons';
 
 const activities: { label: string; value: ActivityType }[] = [
   { label: 'Frisbee', value: 'frisbee' },
@@ -34,6 +37,7 @@ export default function NewSessionScreen() {
       <PageHeading
         eyebrow="Setup · 1 of 2"
         title="Plan this session"
+        highlight="NEW SESSION"
         description="These choices provide context for your baseline and recovery measurements."
       />
       <Card>
@@ -43,6 +47,7 @@ export default function NewSessionScreen() {
             <Choice
               key={item.value}
               label={item.label}
+              leading={<ActivityIcon activity={item.value} size={20} />}
               onPress={() => setActivity(item.value)}
               selected={activity === item.value}
             />
@@ -51,14 +56,17 @@ export default function NewSessionScreen() {
       </Card>
       <Card>
         <SectionTitle>Injured side</SectionTitle>
+        <SideBadge side={injuredSide} injured />
         <View style={wireframeStyles.choiceGrid}>
           <Choice
             label="Left"
+            leading={<AppIcon name="arrow-back-circle-outline" size={18} />}
             onPress={() => setInjuredSide('left')}
             selected={injuredSide === 'left'}
           />
           <Choice
             label="Right"
+            leading={<AppIcon name="arrow-forward-circle-outline" size={18} />}
             onPress={() => setInjuredSide('right')}
             selected={injuredSide === 'right'}
           />
@@ -66,19 +74,26 @@ export default function NewSessionScreen() {
       </Card>
       <Card>
         <SectionTitle>Measurement source</SectionTitle>
+        <StatusTag
+          label={source === 'bluetooth' ? 'Hardware selected' : source === 'manual' ? 'Manual entry' : 'Prototype data'}
+          tone={source === 'bluetooth' ? 'warning' : 'info'}
+        />
         <View style={wireframeStyles.choiceGrid}>
           <Choice
             label="Demo data"
+            leading={<AppIcon name="flask-outline" size={18} />}
             onPress={() => setSource('mock')}
             selected={source === 'mock'}
           />
           <Choice
             label="Manual"
+            leading={<AppIcon name="create-outline" size={18} />}
             onPress={() => setSource('manual')}
             selected={source === 'manual'}
           />
           <Choice
             label="Bluetooth"
+            leading={<AppIcon name="bluetooth-outline" size={18} />}
             onPress={() => setSource('bluetooth')}
             selected={source === 'bluetooth'}
           />
@@ -86,6 +101,7 @@ export default function NewSessionScreen() {
       </Card>
       <Button
         label="Create session"
+        icon="add-circle-outline"
         onPress={() => {
           const sessionId = createSession({
             activityType: activity,
@@ -97,6 +113,7 @@ export default function NewSessionScreen() {
             params: { sessionId },
           });
         }}
+        variant="highlight"
       />
     </Page>
   );

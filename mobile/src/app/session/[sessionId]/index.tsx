@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 
 import {
+  ActivityBadge,
   Button,
   Card,
   Notice,
@@ -9,9 +10,12 @@ import {
   PageHeading,
   Row,
   SectionTitle,
-} from '@/components/wireframe';
+  StageCard,
+  TimelineItem,
+} from '@/components/ui';
 import type { KneeSide } from '@/domain/models';
 import { useSessionStore } from '@/state/session-store';
+import { formatTemperature } from '@/utils/format';
 
 const activityNames: Record<string, string> = {
   badminton: 'Badminton',
@@ -100,22 +104,33 @@ export default function SessionOverviewScreen() {
       <PageHeading
         eyebrow="Current session"
         title={`${activityNames[session.activityType]} · Today`}
+        highlight={activityInProgress ? 'ACTIVITY LIVE' : undefined}
         description="Choose the stage you need. You can leave the app and continue here later."
       />
+      <ActivityBadge activity={session.activityType} label={activityNames[session.activityType]} />
 
-      <Notice title="Next recommended action" body={nextAction} />
+      <Notice title="Next recommended action" body={nextAction} tone="info" />
 
-      <Card>
-        <SectionTitle>1 · Before activity</SectionTitle>
-        <Row label="Status" value={baselineComplete ? 'Complete' : 'Needs measurements'} />
+      <StageCard
+        number={1}
+        title="Before activity"
+        status={baselineComplete ? 'Complete' : 'Needs measurements'}
+        tone={baselineComplete ? 'complete' : 'active'}>
+        <Row
+          label="Status"
+          value={baselineComplete ? 'Complete' : 'Needs measurements'}
+          icon={baselineComplete ? 'checkmark-circle-outline' : 'ellipse-outline'}
+        />
         {session.baseline.left ? (
           <Row
             label="Left knee"
-            value={`${session.baseline.left.temperatureCelsius.toFixed(1)}°C · Recorded`}
+            value={`${formatTemperature(session.baseline.left.temperatureCelsius)} · Recorded`}
+            icon="arrow-back-circle-outline"
           />
         ) : (
           <Button
             label="Measure left knee"
+            icon="scan-outline"
             onPress={() => openMeasurement('baseline', 'left', 'baseline')}
             variant="secondary"
           />
@@ -123,11 +138,13 @@ export default function SessionOverviewScreen() {
         {session.baseline.right ? (
           <Row
             label="Right knee"
-            value={`${session.baseline.right.temperatureCelsius.toFixed(1)}°C · Recorded`}
+            value={`${formatTemperature(session.baseline.right.temperatureCelsius)} · Recorded`}
+            icon="arrow-forward-circle-outline"
           />
         ) : (
           <Button
             label="Measure right knee"
+            icon="scan-outline"
             onPress={() => openMeasurement('baseline', 'right', 'baseline')}
             variant="secondary"
           />
@@ -135,16 +152,29 @@ export default function SessionOverviewScreen() {
         {session.baseline.left || session.baseline.right ? (
           <Button
             label="Edit pre-activity feelings"
+            icon="create-outline"
             onPress={() => editFeelings('baseline')}
-            variant="text"
+            variant="secondary"
           />
         ) : null}
-      </Card>
+      </StageCard>
 
-      <Card>
-        <SectionTitle>2 · Activity</SectionTitle>
+      <StageCard
+        number={2}
+        title="Activity"
+        status={
+          activityComplete
+            ? 'Complete'
+            : session.activity.status === 'paused'
+              ? 'Paused'
+              : activityInProgress
+                ? 'In progress'
+                : 'Not started'
+        }
+        tone={activityComplete ? 'complete' : activityInProgress ? 'active' : 'pending'}>
         <Row
           label="Status"
+          icon="pulse-outline"
           value={
             activityComplete
               ? `Complete · ${elapsedMinutes} min`
@@ -155,9 +185,15 @@ export default function SessionOverviewScreen() {
                   : 'Not started'
           }
         />
-        {activityComplete ? <Row label="Activity load" value="82 · High" /> : null}
+        {activityComplete ? (
+          <Row label="Activity load" value="82 · High" icon="speedometer-outline" />
+        ) : null}
         {activityInProgress ? (
-          <Row label="Live samples" value={String(session.activity.elapsedSeconds * 50)} />
+          <Row
+            label="Live samples"
+            value={String(session.activity.elapsedSeconds * 50)}
+            icon="pulse-outline"
+          />
         ) : null}
         <Button
           disabled={!baselineComplete}
@@ -168,6 +204,7 @@ export default function SessionOverviewScreen() {
                 ? 'Return to activity'
                 : 'Set up activity'
           }
+          icon={activityComplete ? 'analytics-outline' : activityInProgress ? 'play-circle-outline' : 'shirt-outline'}
           onPress={() =>
             router.push({
               pathname: activityComplete
@@ -180,10 +217,13 @@ export default function SessionOverviewScreen() {
           }
           variant="secondary"
         />
-      </Card>
+      </StageCard>
 
-      <Card>
-        <SectionTitle>3 · After activity</SectionTitle>
+      <StageCard
+        number={3}
+        title="After activity"
+        status={allRecoveryComplete ? 'Complete' : activityComplete ? 'In progress' : 'Locked'}
+        tone={allRecoveryComplete ? 'complete' : activityComplete ? 'active' : 'pending'}>
         {recoveryCheckpoints.map((checkpoint) => {
           const record = session.recovery[checkpoint];
           const complete = Boolean(record?.left && record?.right);
@@ -197,16 +237,25 @@ export default function SessionOverviewScreen() {
                 ? 'Pending'
                 : 'Locked';
           return (
-            <Button
+            <TimelineItem
               key={checkpoint}
               disabled={!activityComplete}
-              label={`${label} · ${status}`}
+              label={label}
+              status={status}
+              tone={
+                complete
+                  ? 'complete'
+                  : partiallyComplete
+                    ? 'active'
+                    : activityComplete
+                      ? 'pending'
+                      : 'pending'
+              }
               onPress={() => openCheckpoint(checkpoint)}
-              variant={complete ? 'text' : 'secondary'}
             />
           );
         })}
-      </Card>
+      </StageCard>
 
       {confirmEnd ? (
         <Card>
@@ -214,6 +263,7 @@ export default function SessionOverviewScreen() {
           <Notice
             title="Your recorded data will be kept"
             body="The session will leave the Training home. Measurements already saved on this device will not be deleted."
+            tone="warning"
           />
           <Button
             label={sessionComplete ? 'Complete session' : 'End session early'}
@@ -222,13 +272,14 @@ export default function SessionOverviewScreen() {
               router.dismissTo('/');
             }}
           />
-          <Button label="Keep session open" onPress={() => setConfirmEnd(false)} variant="text" />
+          <Button label="Keep session open" onPress={() => setConfirmEnd(false)} variant="secondary" />
         </Card>
       ) : (
         <Button
-          label={sessionComplete ? 'Complete session' : 'End current session'}
+            label={sessionComplete ? 'Complete session' : 'End current session'}
+          icon="stop-circle-outline"
           onPress={() => setConfirmEnd(true)}
-          variant="text"
+          variant="danger"
         />
       )}
     </Page>

@@ -8,7 +8,8 @@ import {
   PageHeading,
   Row,
   SectionTitle,
-} from '@/components/wireframe';
+  StatusTag,
+} from '@/components/ui';
 
 export default function MeasurementPositionScreen() {
   return (
@@ -16,20 +17,23 @@ export default function MeasurementPositionScreen() {
       <PageHeading
         eyebrow="Measurement guide"
         title="Use the same position every time"
+        highlight="REPEATABLE"
         description="The exact prototype distance will be confirmed through hardware testing."
       />
       <Card>
+        <StatusTag label="Working protocol" tone="warning" />
         <SectionTitle>Position</SectionTitle>
-        <Row label="Reference" value="Patella" />
-        <Row label="Prototype marker" value="5 cm above" />
-        <Row label="Band direction" value="Level around leg" />
-        <Row label="Leg position" value="Seated and still" />
+        <Row label="Reference" value="Patella" icon="locate-outline" />
+        <Row label="Prototype marker" value="5 cm above" icon="resize-outline" />
+        <Row label="Band direction" value="Level around leg" icon="sync-outline" />
+        <Row label="Leg position" value="Seated and still" icon="body-outline" />
       </Card>
       <Notice
         title="Prototype value"
         body="The 5 cm position is a working assumption from the PRD and may change after repeatability testing."
+        tone="warning"
       />
-      <Button label="Close guide" onPress={() => router.back()} />
+      <Button label="Close guide" onPress={() => router.back()} icon="close-circle-outline" />
     </Page>
   );
 }

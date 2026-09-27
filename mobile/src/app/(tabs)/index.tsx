@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 
 import {
+  ActivityBadge,
   Button,
   Card,
   Notice,
@@ -8,7 +9,8 @@ import {
   PageHeading,
   Row,
   SectionTitle,
-} from '@/components/wireframe';
+  StatusTag,
+} from '@/components/ui';
 import { useSessionStore } from '@/state/session-store';
 
 export default function TrainingScreen() {
@@ -33,18 +35,31 @@ export default function TrainingScreen() {
       <PageHeading
         eyebrow="Training"
         title="How is your knee responding?"
+        highlight="RECOVERY IN MOTION"
         description="Create a session to connect activity load with your post-activity response."
       />
 
       {currentSession ? (
-        <Card>
+        <Card variant="hero">
+          <StatusTag
+            label={
+              currentSession.activity.status === 'active'
+                ? 'Activity live'
+                : currentSession.activity.status === 'paused'
+                  ? 'Activity paused'
+                  : 'Session in progress'
+            }
+            tone={currentSession.activity.status === 'active' ? 'active' : 'pending'}
+          />
           <SectionTitle>Session in progress</SectionTitle>
-          <Row label="Activity" value={activityLabel} />
-          <Row label="Current stage" value={currentStage} />
-          <Row label="Saved locally" value="Available after reopening the app" />
+          <ActivityBadge activity={currentSession.activityType} label={activityLabel} />
+          <Row label="Current stage" value={currentStage} icon="navigate-circle-outline" />
+          <Row label="Saved locally" value="Available after reopening the app" icon="phone-portrait-outline" />
           <Button
             label="Continue current session"
+            icon="arrow-forward-circle-outline"
             onPress={() => router.push(`/session/${currentSession.id}`)}
+            variant="highlight"
           />
         </Card>
       ) : hydrated ? (
@@ -56,6 +71,7 @@ export default function TrainingScreen() {
       <SectionTitle>Create a new session</SectionTitle>
       <Button
         label="Start new session"
+        icon="add-circle-outline"
         onPress={() => router.push('/session/new')}
         variant="secondary"
       />
@@ -63,15 +79,18 @@ export default function TrainingScreen() {
       <Notice
         title="Prototype mode"
         body="Day 2 uses demo measurements. Bluetooth hardware will be connected later without changing this workflow."
+        tone="info"
       />
 
       <Card>
+        <StatusTag label="Complete" tone="complete" />
         <SectionTitle>Recent session</SectionTitle>
-        <Row label="Activity" value="Frisbee" />
-        <Row label="Load" value="High · 82" />
-        <Row label="Recovery" value="48 min" />
+        <ActivityBadge activity="frisbee" label="Frisbee" />
+        <Row label="Load" value="High · 82" icon="speedometer-outline" />
+        <Row label="Recovery" value="48 min" icon="time-outline" />
         <Button
           label="View summary"
+          icon="analytics-outline"
           onPress={() => router.push('/session/demo-previous/summary')}
           variant="secondary"
         />
