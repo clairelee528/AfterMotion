@@ -35,7 +35,7 @@ export interface SymptomRecord {
 }
 
 export interface MeasurementQuality {
-  bandTension: 'unknown' | 'tooLoose' | 'correct';
+  bandTension: 'unknown' | 'tooLoose' | 'tooTight' | 'correct';
   stability: 'unknown' | 'movement' | 'stable';
   temperatureStable: boolean;
 }
@@ -56,6 +56,7 @@ export interface CheckpointRecord {
   left: KneeMeasurement | null;
   right: KneeMeasurement | null;
   symptoms: SymptomRecord;
+  symptomsRecordedAt: string | null;
 }
 
 export interface ActivityMetrics {

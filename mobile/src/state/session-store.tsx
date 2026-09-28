@@ -12,17 +12,18 @@ import type {
   CheckpointRecord,
   CreateSessionInput,
   KneeMeasurement,
-  KneeSide,
-  MeasurementPhase,
+  MeasurementCheckpoint,
   Session,
   SessionState,
   SymptomRecord,
 } from '@/domain/models';
-import { isRecoveryCheckpoint } from '@/domain/models';
+import {
+  saveMeasurementToSession,
+  saveSymptomsToSession,
+} from '@/domain/session-mutations';
 import {
   createDemoSessionFixtures,
   getDemoActivityMetrics,
-  getDemoMeasurementReading,
 } from '@/data/demo-fixtures';
 import {
   decodeSessionState,
@@ -39,14 +40,12 @@ interface SessionStoreValue extends SessionState {
   loadDemoFixtures: () => void;
   endSession: (sessionId: string, endedEarly: boolean) => void;
   finishActivity: (sessionId: string, elapsedSeconds: number) => void;
-  saveFeelings: (sessionId: string, checkpoint: string, symptoms: SymptomRecord) => void;
-  saveMeasurement: (
+  saveFeelings: (
     sessionId: string,
-    phase: MeasurementPhase,
-    side: KneeSide,
-    checkpoint: string,
-    pain: number,
+    checkpoint: MeasurementCheckpoint,
+    symptoms: SymptomRecord,
   ) => void;
+  saveMeasurement: (measurement: KneeMeasurement) => void;
   setActivityStatus: (
     sessionId: string,
     status: ActivityStatus,
@@ -65,6 +64,7 @@ function emptyCheckpoint(): CheckpointRecord {
     left: null,
     right: null,
     symptoms: { ...defaultSymptoms },
+    symptomsRecordedAt: null,
   };
 }
 
@@ -156,51 +156,10 @@ export function SessionStoreProvider({ children }: { children: ReactNode }) {
     return id;
   }
 
-  function saveMeasurement(
-    sessionId: string,
-    phase: MeasurementPhase,
-    side: KneeSide,
-    checkpoint: string,
-    pain: number,
-  ) {
-    const measurementCheckpoint =
-      phase === 'baseline' || !isRecoveryCheckpoint(checkpoint) ? 'baseline' : checkpoint;
-    const reading = getDemoMeasurementReading(side, measurementCheckpoint);
-    const measurement: KneeMeasurement = {
-      id: `${sessionId}-${checkpoint}-${side}-${Date.now()}`,
-      sessionId,
-      checkpoint: measurementCheckpoint,
-      side,
-      recordedAt: new Date().toISOString(),
-      ...reading,
-      source: state.sessions[sessionId]?.measurementSource ?? 'mock',
-    };
-    updateSession(sessionId, (session) => {
-      if (phase === 'baseline') {
-        return {
-          ...session,
-          updatedAt: new Date().toISOString(),
-          baseline: {
-            ...session.baseline,
-            [side]: measurement,
-            symptoms: { ...session.baseline.symptoms, pain },
-          },
-        };
-      }
-      const previous = session.recovery[checkpoint] ?? emptyCheckpoint();
-      return {
-        ...session,
-        updatedAt: new Date().toISOString(),
-        recovery: {
-          ...session.recovery,
-          [checkpoint]: {
-            ...previous,
-            [side]: measurement,
-            symptoms: { ...previous.symptoms, pain },
-          },
-        },
-      };
-    });
+  function saveMeasurement(measurement: KneeMeasurement) {
+    updateSession(measurement.sessionId, (session) =>
+      saveMeasurementToSession(session, measurement),
+    );
   }
 
   function endSession(sessionId: string, endedEarly: boolean) {
@@ -233,22 +192,14 @@ export function SessionStoreProvider({ children }: { children: ReactNode }) {
     });
   }
 
-  function saveFeelings(sessionId: string, checkpoint: string, symptoms: SymptomRecord) {
-    updateSession(sessionId, (session) => {
-      if (checkpoint === 'baseline') {
-        return {
-          ...session,
-          updatedAt: new Date().toISOString(),
-          baseline: { ...session.baseline, symptoms },
-        };
-      }
-      const previous = session.recovery[checkpoint] ?? emptyCheckpoint();
-      return {
-        ...session,
-        updatedAt: new Date().toISOString(),
-        recovery: { ...session.recovery, [checkpoint]: { ...previous, symptoms } },
-      };
-    });
+  function saveFeelings(
+    sessionId: string,
+    checkpoint: MeasurementCheckpoint,
+    symptoms: SymptomRecord,
+  ) {
+    updateSession(sessionId, (session) =>
+      saveSymptomsToSession(session, checkpoint, symptoms),
+    );
   }
 
   function setActivityStatus(

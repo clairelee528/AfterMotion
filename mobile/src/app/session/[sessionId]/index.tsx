@@ -18,6 +18,7 @@ import { recoveryCheckpoints, type KneeSide } from '@/domain/models';
 import {
   areAllRecoveryCheckpointsComplete,
   getCheckpointStatus,
+  getNextMissingSide,
   getRecommendedAction,
   isActivityInProgress,
   isBaselineComplete,
@@ -90,18 +91,27 @@ export default function SessionOverviewScreen() {
 
   function openCheckpoint(checkpoint: string) {
     const record = session.recovery[checkpoint];
-    if (getCheckpointStatus(record) === 'complete') {
+    const checkpointStatus = getCheckpointStatus(record);
+    if (checkpointStatus === 'complete') {
       router.push({
         pathname: '/session/[sessionId]/checkpoint',
         params: { sessionId, checkpoint },
       });
       return;
     }
-    openMeasurement('recovery', record?.left ? 'right' : 'left', checkpoint);
+    if (checkpointStatus === 'needsCheckIn') {
+      router.push({
+        pathname: '/session/[sessionId]/feelings',
+        params: { sessionId, checkpoint, returnTo: 'checkpoint' },
+      });
+      return;
+    }
+    openMeasurement('recovery', getNextMissingSide(record) ?? 'left', checkpoint);
   }
 
   const elapsedMinutes = Math.floor(session.activity.elapsedSeconds / 60);
   const nextAction = recommendedActionLabels[getRecommendedAction(session)];
+  const baselineStatus = getCheckpointStatus(session.baseline);
 
   return (
     <Page>
@@ -118,11 +128,23 @@ export default function SessionOverviewScreen() {
       <StageCard
         number={1}
         title="Before activity"
-        status={baselineComplete ? 'Complete' : 'Needs measurements'}
+        status={
+          baselineComplete
+            ? 'Complete'
+            : baselineStatus === 'needsCheckIn'
+              ? 'Check-in needed'
+              : 'Needs measurements'
+        }
         tone={baselineComplete ? 'complete' : 'active'}>
         <Row
           label="Status"
-          value={baselineComplete ? 'Complete' : 'Needs measurements'}
+          value={
+            baselineComplete
+              ? 'Complete'
+              : baselineStatus === 'needsCheckIn'
+                ? 'Check-in needed'
+                : 'Needs measurements'
+          }
           icon={baselineComplete ? 'checkmark-circle-outline' : 'ellipse-outline'}
         />
         {session.baseline.left ? (
@@ -145,19 +167,42 @@ export default function SessionOverviewScreen() {
             value={`${formatTemperature(session.baseline.right.temperatureCelsius)} · Recorded`}
             icon="arrow-forward-circle-outline"
           />
-        ) : (
+        ) : session.baseline.left ? (
           <Button
             label="Measure right knee"
             icon="scan-outline"
             onPress={() => openMeasurement('baseline', 'right', 'baseline')}
             variant="secondary"
           />
+        ) : (
+          <Row
+            label="Right knee"
+            value="Available after left knee"
+            icon="lock-closed-outline"
+          />
         )}
         {session.baseline.left || session.baseline.right ? (
           <Button
-            label="Edit pre-activity feelings"
+            label={
+              session.baseline.symptomsRecordedAt
+                ? 'Edit pre-activity feelings'
+                : 'Record pre-activity feelings'
+            }
             icon="create-outline"
             onPress={() => editFeelings('baseline')}
+            variant="secondary"
+          />
+        ) : null}
+        {baselineComplete ? (
+          <Button
+            label="View baseline results"
+            icon="analytics-outline"
+            onPress={() =>
+              router.push({
+                pathname: '/session/[sessionId]/checkpoint',
+                params: { sessionId, checkpoint: 'baseline' },
+              })
+            }
             variant="secondary"
           />
         ) : null}
@@ -244,7 +289,9 @@ export default function SessionOverviewScreen() {
           const label = checkpoint === '0' ? 'Post activity' : `${checkpoint} min`;
           const status = complete
             ? 'Complete'
-            : partiallyComplete
+            : checkpointStatus === 'needsCheckIn'
+              ? 'Check-in needed'
+              : partiallyComplete
               ? '1 of 2 knees complete'
               : activityComplete
                 ? 'Pending'
@@ -258,7 +305,9 @@ export default function SessionOverviewScreen() {
               tone={
                 complete
                   ? 'complete'
-                  : partiallyComplete
+                  : checkpointStatus === 'needsCheckIn'
+                    ? 'active'
+                    : partiallyComplete
                     ? 'active'
                     : activityComplete
                       ? 'pending'

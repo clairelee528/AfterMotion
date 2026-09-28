@@ -7,7 +7,7 @@ import {
   type SubjectiveSwelling,
 } from './models';
 
-export type CheckpointStatus = 'pending' | 'partial' | 'complete';
+export type CheckpointStatus = 'pending' | 'partial' | 'needsCheckIn' | 'complete';
 export type SessionStage =
   | 'baseline'
   | 'readyForActivity'
@@ -35,9 +35,25 @@ export const swellingScores: Record<SubjectiveSwelling, number> = {
 };
 
 export function getCheckpointStatus(record?: CheckpointRecord): CheckpointStatus {
-  if (record?.left && record.right) return 'complete';
+  if (record?.left && record.right) {
+    return record.symptomsRecordedAt ? 'complete' : 'needsCheckIn';
+  }
   if (record?.left || record?.right) return 'partial';
   return 'pending';
+}
+
+export function getNextMissingSide(record?: CheckpointRecord): KneeSide | null {
+  if (!record?.left) return 'left';
+  if (!record.right) return 'right';
+  return null;
+}
+
+export function getNextSideAfterMeasurement(
+  record: CheckpointRecord | undefined,
+  measuredSide: KneeSide,
+): KneeSide | null {
+  const otherSide: KneeSide = measuredSide === 'left' ? 'right' : 'left';
+  return record?.[otherSide] ? null : otherSide;
 }
 
 export function isBaselineComplete(session: Session): boolean {

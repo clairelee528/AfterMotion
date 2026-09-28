@@ -77,6 +77,7 @@ function checkpoint(
     left: completion === 'none' ? null : measurement(sessionId, key, 'left', recordedAt),
     right: completion === 'both' ? measurement(sessionId, key, 'right', recordedAt) : null,
     symptoms: { ...symptoms },
+    symptomsRecordedAt: completion === 'none' ? null : recordedAt,
   };
 }
 

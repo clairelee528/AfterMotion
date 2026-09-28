@@ -11,8 +11,12 @@
   },
   "include": [
     "src/domain/models.ts",
+    "src/domain/measurement-timing.ts",
+    "src/domain/session-mutations.ts",
     "src/domain/session-selectors.ts",
     "src/data/demo-fixtures.ts",
+    "src/data/measurement-source.ts",
+    "src/data/mock-measurement-source.ts",
     "src/state/session-persistence.ts"
   ]
 }

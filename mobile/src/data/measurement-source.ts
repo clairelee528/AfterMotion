@@ -2,14 +2,12 @@ import type {
   KneeMeasurement,
   KneeSide,
   MeasurementSource,
-  SymptomRecord,
 } from '@/domain/models';
 
 export interface MeasurementRequest {
   sessionId: string;
   side: KneeSide;
   checkpoint: KneeMeasurement['checkpoint'];
-  symptoms: SymptomRecord;
 }
 
 export interface MeasurementDataSource {

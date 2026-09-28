@@ -5,6 +5,7 @@ import type {
   CheckpointRecord,
   KneeMeasurement,
   KneeSide,
+  MeasurementQuality,
   MeasurementCheckpoint,
   MeasurementSource,
   PersistedSessionState,
@@ -74,6 +75,19 @@ function normalizeSymptoms(value: unknown, measurement?: UnknownRecord): Symptom
   };
 }
 
+function normalizeMeasurementQuality(value: unknown): MeasurementQuality | undefined {
+  if (!isRecord(value)) return undefined;
+  return {
+    bandTension: enumValue(
+      value.bandTension,
+      ['unknown', 'tooLoose', 'tooTight', 'correct'],
+      'unknown',
+    ),
+    stability: enumValue(value.stability, ['unknown', 'movement', 'stable'], 'unknown'),
+    temperatureStable: value.temperatureStable === true,
+  };
+}
+
 function normalizeMeasurement(
   value: unknown,
   sessionId: string,
@@ -92,6 +106,7 @@ function normalizeMeasurement(
     stretchValue: finiteNumber(value.stretchValue, 0),
     temperatureCelsius: finiteNumber(value.temperatureCelsius, 0),
     source: enumValue(value.source, measurementSources, fallbackSource),
+    quality: normalizeMeasurementQuality(value.quality),
   };
 }
 
@@ -111,6 +126,9 @@ function normalizeCheckpoint(
     left: normalizeMeasurement(record.left, sessionId, checkpoint, 'left', source),
     right: normalizeMeasurement(record.right, sessionId, checkpoint, 'right', source),
     symptoms: normalizeSymptoms(record.symptoms, symptomMeasurement),
+    symptomsRecordedAt:
+      nullableString(record.symptomsRecordedAt) ??
+      (symptomMeasurement ? nullableString(symptomMeasurement.recordedAt) : null),
   };
 }
 

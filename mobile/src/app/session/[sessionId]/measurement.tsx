@@ -1,32 +1,40 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 
+import { BandPlacementGuide } from '@/components/band-placement-guide';
 import {
   Button,
   Card,
-  Choice,
-  Label,
   Notice,
   Page,
   PageHeading,
   MeasurementProgress,
   Row,
-  SectionTitle,
   SideBadge,
   StatusTag,
-  Value,
   wireframeStyles,
 } from '@/components/ui';
-import { getDemoMeasurementReading } from '@/data/demo-fixtures';
-import { isRecoveryCheckpoint, type KneeSide } from '@/domain/models';
+import { MockMeasurementDataSource } from '@/data/mock-measurement-source';
+import {
+  isRecoveryCheckpoint,
+  type KneeMeasurement,
+  type KneeSide,
+  type MeasurementPhase,
+} from '@/domain/models';
+import {
+  DEMO_MEASUREMENT_SECONDS,
+  getMeasurementTimerSnapshot,
+  MEASUREMENT_PROTOCOL_SECONDS,
+} from '@/domain/measurement-timing';
+import { getNextSideAfterMeasurement } from '@/domain/session-selectors';
 import { useSessionStore } from '@/state/session-store';
-import { formatScore, formatTemperature } from '@/utils/format';
+import { formatTemperature } from '@/utils/format';
 
-type MeasurementPhase = 'baseline' | 'recovery';
 type MeasurementState =
   | 'disconnected'
   | 'tooLoose'
+  | 'tooTight'
   | 'ready'
   | 'measuring'
   | 'movement'
@@ -41,6 +49,10 @@ const stateCopy: Record<MeasurementState, { title: string; body: string }> = {
   tooLoose: {
     title: 'Band too loose',
     body: 'Tighten the band until the indicator reaches the target range.',
+  },
+  tooTight: {
+    title: 'Band too tight',
+    body: 'Loosen the band until the indicator returns to the target range.',
   },
   ready: {
     title: 'Ready to measure',
@@ -60,7 +72,7 @@ const stateCopy: Record<MeasurementState, { title: string; body: string }> = {
   },
   complete: {
     title: 'Measurement complete',
-    body: 'Demo stretch and temperature values have been recorded.',
+    body: 'Stretch and temperature are captured and ready to save.',
   },
 };
 
@@ -71,41 +83,124 @@ export default function MeasurementScreen() {
     phase: MeasurementPhase;
     side: KneeSide;
     checkpoint: string;
+    mode?: 'remeasure';
   }>();
   const phase = params.phase ?? 'baseline';
   const side = params.side ?? 'left';
   const checkpoint = params.checkpoint ?? 'baseline';
+  const session = sessions[params.sessionId];
   const [measurementState, setMeasurementState] =
     useState<MeasurementState>('ready');
-  const [pain, setPain] = useState(2);
-  const copy = stateCopy[measurementState];
-  const session = sessions[params.sessionId];
+  const isAcceleratedDemo = session?.measurementSource === 'mock';
+  const measurementDuration = isAcceleratedDemo
+    ? DEMO_MEASUREMENT_SECONDS
+    : MEASUREMENT_PROTOCOL_SECONDS;
+  const [remainingSeconds, setRemainingSeconds] = useState(measurementDuration);
+  const [progressValue, setProgressValue] = useState(0);
+  const startedAtRef = useRef<number | null>(null);
+  const captureRequestedRef = useRef(false);
+  const [capturedMeasurement, setCapturedMeasurement] =
+    useState<KneeMeasurement | null>(null);
+  const measurementDataSource = useMemo(() => new MockMeasurementDataSource(), []);
+  const sourceAvailable = session?.measurementSource === 'mock';
+  const sourceUnavailable = Boolean(session && !sourceAvailable);
+  const copy = stateCopy[sourceUnavailable ? 'disconnected' : measurementState];
   const currentRecord =
     phase === 'baseline' ? session?.baseline : session?.recovery[checkpoint];
   const measurementCheckpoint =
     phase === 'baseline' || !isRecoveryCheckpoint(checkpoint) ? 'baseline' : checkpoint;
-  const previewReading = getDemoMeasurementReading(side, measurementCheckpoint);
   const sourceLabel =
     session?.measurementSource === 'bluetooth'
       ? 'Bluetooth sensor'
       : session?.measurementSource === 'manual'
         ? 'Manual entry'
         : 'Demo data';
-  const measurementOrder: KneeSide[] = ['left', 'right'];
-  const nextSide = measurementOrder.find(
-    (target) => target !== side && !currentRecord?.[target],
-  );
+  const nextSide = getNextSideAfterMeasurement(currentRecord, side);
 
   const stageLabel = useMemo(() => {
     if (phase === 'baseline') return 'Baseline';
     return checkpoint === '0' ? 'Post activity' : `${checkpoint} min recovery`;
   }, [checkpoint, phase]);
 
+  useEffect(() => {
+    if (session && session.measurementSource !== 'mock') return;
+    let mounted = true;
+    void measurementDataSource.connect().catch(() => {
+      if (mounted) setMeasurementState('disconnected');
+    });
+    return () => {
+      mounted = false;
+      void measurementDataSource.disconnect();
+    };
+  }, [measurementDataSource, session]);
+
+  useEffect(() => {
+    if (measurementState !== 'measuring' && measurementState !== 'stabilizing') return;
+    const timer = setInterval(() => {
+      if (startedAtRef.current === null) return;
+      const elapsedSeconds = Math.floor((Date.now() - startedAtRef.current) / 1000);
+      const snapshot = getMeasurementTimerSnapshot(elapsedSeconds, measurementDuration);
+      setRemainingSeconds(snapshot.remainingSeconds);
+      setProgressValue(snapshot.progressPercent);
+      setMeasurementState(snapshot.state);
+    }, 250);
+    return () => clearInterval(timer);
+  }, [measurementDuration, measurementState]);
+
+  useEffect(() => {
+    if (measurementState !== 'complete' || captureRequestedRef.current) return;
+    captureRequestedRef.current = true;
+    let mounted = true;
+    void measurementDataSource
+      .measure({
+        sessionId: params.sessionId,
+        checkpoint: measurementCheckpoint,
+        side,
+      })
+      .then((measurement) => {
+        if (mounted) setCapturedMeasurement(measurement);
+      })
+      .catch(() => {
+        if (mounted) setMeasurementState('disconnected');
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [measurementCheckpoint, measurementDataSource, measurementState, params.sessionId, side]);
+
+  function startMeasurement() {
+    startedAtRef.current = Date.now();
+    captureRequestedRef.current = false;
+    setCapturedMeasurement(null);
+    setRemainingSeconds(measurementDuration);
+    setProgressValue(0);
+    setMeasurementState('measuring');
+  }
+
+  function resetMeasurement() {
+    startedAtRef.current = null;
+    captureRequestedRef.current = false;
+    setCapturedMeasurement(null);
+    setRemainingSeconds(measurementDuration);
+    setProgressValue(0);
+    setMeasurementState('ready');
+  }
+
   function continueFlow() {
-    saveMeasurement(params.sessionId, phase, side, checkpoint, pain);
+    if (!capturedMeasurement) return;
+    saveMeasurement(capturedMeasurement);
+    if (params.mode === 'remeasure') {
+      router.replace({
+        pathname: '/session/[sessionId]/checkpoint',
+        params: {
+          sessionId: params.sessionId,
+          checkpoint: phase === 'baseline' ? 'baseline' : checkpoint,
+        },
+      });
+      return;
+    }
     if (nextSide) {
-      setMeasurementState('ready');
-      setPain(2);
+      resetMeasurement();
       router.replace({
         pathname: '/session/[sessionId]/measurement',
         params: { ...params, sessionId: params.sessionId, side: nextSide },
@@ -113,47 +208,48 @@ export default function MeasurementScreen() {
       return;
     }
 
-    if (phase === 'recovery') {
-      router.replace({
-        pathname: '/session/[sessionId]/checkpoint',
-        params: { sessionId: params.sessionId, checkpoint },
-      });
-      return;
-    }
-
     router.replace({
-      pathname: '/session/[sessionId]',
-      params: { sessionId: params.sessionId },
+      pathname: '/session/[sessionId]/feelings',
+      params: {
+        sessionId: params.sessionId,
+        checkpoint: phase === 'baseline' ? 'baseline' : checkpoint,
+        returnTo: 'checkpoint',
+      },
     });
   }
 
   function primaryAction() {
-    if (measurementState === 'ready') setMeasurementState('measuring');
-    else if (measurementState === 'measuring') setMeasurementState('complete');
+    if (measurementState === 'ready') startMeasurement();
     else if (measurementState === 'complete') continueFlow();
-    else setMeasurementState('ready');
+    else if (measurementState !== 'measuring' && measurementState !== 'stabilizing') {
+      resetMeasurement();
+    }
   }
 
   const primaryLabel =
-    measurementState === 'ready'
+    sourceUnavailable
+      ? 'Source unavailable'
+      : measurementState === 'ready'
       ? 'Start measurement'
       : measurementState === 'measuring'
-        ? 'Complete demo reading'
+        ? `Measuring · ${remainingSeconds}s`
+        : measurementState === 'stabilizing'
+          ? `Stabilizing · ${remainingSeconds}s`
         : measurementState === 'complete'
           ? nextSide
             ? `Save and measure ${nextSide} knee`
-            : phase === 'recovery'
-              ? 'Save and view results'
-              : 'Save baseline'
+            : 'Save and continue to feelings'
           : 'Restore ready state';
-  const progressValue =
-    measurementState === 'complete' ? 100 : measurementState === 'measuring' ? 64 : 12;
   const noticeTone =
-    measurementState === 'complete'
+    sourceUnavailable
+      ? 'error'
+      : measurementState === 'complete'
       ? 'success'
       : measurementState === 'disconnected' || measurementState === 'movement'
         ? 'error'
-        : measurementState === 'tooLoose' || measurementState === 'stabilizing'
+        : measurementState === 'tooLoose' ||
+            measurementState === 'tooTight' ||
+            measurementState === 'stabilizing'
           ? 'warning'
           : 'info';
 
@@ -165,54 +261,79 @@ export default function MeasurementScreen() {
         description="Position the band at the marked location and keep your leg still."
       />
       <SideBadge side={side} injured={session?.injuredSide === side} />
+      {side === 'right' && currentRecord?.left ? (
+        <Notice
+          title="Switch to the right knee"
+          body="Remove the band from the left knee, then use the same marker and closure position on the right knee."
+          tone="info"
+        />
+      ) : null}
+      <BandPlacementGuide
+        side={side}
+        onOpenFullGuide={() => router.push('/measurement-position')}
+      />
       <MeasurementProgress
         label="Measurement progress"
         value={progressValue}
-        detail={measurementState === 'complete' ? 'Complete' : '30 sec window'}
+        detail={
+          measurementState === 'complete'
+            ? 'Complete'
+            : measurementState === 'measuring' || measurementState === 'stabilizing'
+              ? `${remainingSeconds}s remaining`
+              : '30 sec protocol'
+        }
       />
+      {isAcceleratedDemo ? (
+        <Notice
+          title="Accelerated demo timing"
+          body="This prototype completes the 30 second protocol in 8 seconds. Bluetooth measurements will use the full window."
+          tone="info"
+        />
+      ) : null}
       <Notice title={copy.title} body={copy.body} tone={noticeTone} />
       <Card>
         <StatusTag
-          label={measurementState === 'complete' ? 'Recorded' : 'Ready to capture'}
-          tone={measurementState === 'complete' ? 'complete' : 'active'}
+          label={
+            sourceUnavailable
+              ? 'Not connected'
+              : measurementState === 'complete'
+              ? capturedMeasurement
+                ? 'Ready to save'
+                : 'Finalizing result'
+              : 'Ready to capture'
+          }
+          tone={sourceUnavailable ? 'error' : measurementState === 'complete' ? 'complete' : 'active'}
         />
         <Row label="Source" value={sourceLabel} icon="radio-outline" />
-        <Row label="Band tension" value={measurementState === 'tooLoose' ? 'Too loose' : 'Correct'} icon="resize-outline" />
+        <Row
+          label="Band tension"
+          value={
+            measurementState === 'tooLoose'
+              ? 'Too loose'
+              : measurementState === 'tooTight'
+                ? 'Too tight'
+                : 'Target aligned'
+          }
+          icon="resize-outline"
+        />
         <Row label="Stability" value={measurementState === 'movement' ? 'Movement' : 'Stable'} icon="pulse-outline" />
         <Row label="Window" value="30 sec" icon="timer-outline" />
       </Card>
 
-      {measurementState === 'complete' ? (
+      {measurementState === 'complete' && capturedMeasurement ? (
         <>
           <Card variant="data">
-            <Label inverse>Measurement result</Label>
-            <Value inverse>
-              Stretch {previewReading.stretchValue.toLocaleString()} ·{' '}
-              {formatTemperature(previewReading.temperatureCelsius)}
-            </Value>
-          </Card>
-          <Card>
-            <SectionTitle>Symptoms</SectionTitle>
-            <Label>Pain · {formatScore(pain)}</Label>
-            <View style={wireframeStyles.choiceGrid}>
-              {[0, 2, 4, 6, 8, 10].map((value) => (
-                <Choice
-                  key={value}
-                  label={String(value)}
-                  onPress={() => setPain(value)}
-                  selected={pain === value}
-                />
-              ))}
-            </View>
             <Row
-              label="Stiffness"
-              value={formatScore(currentRecord?.symptoms.stiffness ?? 2)}
-              icon="body-outline"
+              label="Stretch"
+              value={capturedMeasurement.stretchValue.toLocaleString()}
+              icon="resize-outline"
+              inverse
             />
             <Row
-              label="Subjective swelling"
-              value={currentRecord?.symptoms.swelling ?? 'mild'}
-              icon="water-outline"
+              label="Temperature"
+              value={formatTemperature(capturedMeasurement.temperatureCelsius)}
+              icon="thermometer-outline"
+              inverse
             />
           </Card>
         </>
@@ -220,6 +341,12 @@ export default function MeasurementScreen() {
 
       <View style={wireframeStyles.actions}>
         <Button
+          disabled={
+            measurementState === 'measuring' ||
+            measurementState === 'stabilizing' ||
+            sourceUnavailable ||
+            (measurementState === 'complete' && !capturedMeasurement)
+          }
           label={primaryLabel}
           onPress={primaryAction}
           variant="highlight"
@@ -229,7 +356,14 @@ export default function MeasurementScreen() {
           <Button
             label="Measure again"
             icon="refresh-outline"
-            onPress={() => setMeasurementState('ready')}
+            onPress={resetMeasurement}
+            variant="secondary"
+          />
+        ) : measurementState === 'measuring' || measurementState === 'stabilizing' ? (
+          <Button
+            label="Cancel measurement"
+            icon="close-circle-outline"
+            onPress={resetMeasurement}
             variant="secondary"
           />
         ) : null}
