@@ -11,6 +11,7 @@ import {
   SectionTitle,
   StatusTag,
 } from '@/components/ui';
+import { getClosedSessions, getCompletedRecoveryCount } from '@/domain/session-selectors';
 import { useSessionStore } from '@/state/session-store';
 import { formatDuration } from '@/utils/format';
 
@@ -25,9 +26,7 @@ const activityNames: Record<string, string> = {
 
 export default function HistoryScreen() {
   const { sessions } = useSessionStore();
-  const savedSessions = Object.values(sessions)
-    .filter((session) => session.closedAt)
-    .sort((a, b) => (b.closedAt ?? '').localeCompare(a.closedAt ?? ''));
+  const savedSessions = getClosedSessions(sessions);
 
   return (
     <Page>
@@ -45,9 +44,7 @@ export default function HistoryScreen() {
 
       {savedSessions.length > 0 ? (
         savedSessions.map((session) => {
-          const completeChecks = Object.values(session.recovery).filter(
-            (record) => record.left && record.right,
-          ).length;
+          const completeChecks = getCompletedRecoveryCount(session);
           return (
             <Card key={session.id} variant="hero">
               <StatusTag

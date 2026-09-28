@@ -9,8 +9,11 @@ import {
   SectionTitle,
   StatusTag,
 } from '@/components/ui';
+import { useSessionStore } from '@/state/session-store';
 
 export default function SettingsScreen() {
+  const { loadDemoFixtures } = useSessionStore();
+
   return (
     <Page>
       <PageHeading
@@ -40,8 +43,22 @@ export default function SettingsScreen() {
         />
       </Card>
       <Card>
+        <SectionTitle>Portfolio demo</SectionTitle>
+        <Row
+          label="Included states"
+          value="Active · complete · ended early"
+          icon="albums-outline"
+        />
+        <Button
+          label="Load or reset demo sessions"
+          icon="flask-outline"
+          onPress={loadDemoFixtures}
+          variant="secondary"
+        />
+      </Card>
+      <Card>
         <SectionTitle>About</SectionTitle>
-        <Row label="Prototype" value="Day 3" icon="construct-outline" />
+        <Row label="Prototype" value="Day 4" icon="construct-outline" />
         <Row label="Medical status" value="Not a diagnostic device" icon="information-circle-outline" />
       </Card>
     </Page>

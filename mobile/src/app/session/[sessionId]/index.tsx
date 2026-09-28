@@ -13,7 +13,16 @@ import {
   StageCard,
   TimelineItem,
 } from '@/components/ui';
-import type { KneeSide } from '@/domain/models';
+import { DEMO_SAMPLE_RATE_HZ } from '@/data/demo-fixtures';
+import { recoveryCheckpoints, type KneeSide } from '@/domain/models';
+import {
+  areAllRecoveryCheckpointsComplete,
+  getCheckpointStatus,
+  getRecommendedAction,
+  isActivityInProgress,
+  isBaselineComplete,
+  isSessionComplete,
+} from '@/domain/session-selectors';
 import { useSessionStore } from '@/state/session-store';
 import { formatTemperature } from '@/utils/format';
 
@@ -25,6 +34,16 @@ const activityNames: Record<string, string> = {
   running: 'Running',
   tennis: 'Tennis',
 };
+
+const recommendedActionLabels = {
+  completeBaseline: 'Complete your pre-activity baseline',
+  startActivity: 'Start your activity',
+  resumeActivity: 'Return to your activity recording',
+  completePostActivity: 'Complete the post-activity check',
+  continueRecovery: 'Continue recovery checks',
+  completeSession: 'Complete this session',
+  viewSummary: 'View your session summary',
+} as const;
 
 export default function SessionOverviewScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
@@ -49,18 +68,11 @@ export default function SessionOverviewScreen() {
     );
   }
 
-  const baselineComplete = Boolean(session.baseline.left && session.baseline.right);
-  const activityInProgress =
-    session.activity.status === 'active' || session.activity.status === 'paused';
+  const baselineComplete = isBaselineComplete(session);
+  const activityInProgress = isActivityInProgress(session);
   const activityComplete = session.activity.status === 'complete';
-  const immediateRecovery = session.recovery['0'];
-  const immediateComplete = Boolean(immediateRecovery?.left && immediateRecovery?.right);
-  const recoveryCheckpoints = ['0', '15', '30', '45', '60'];
-  const allRecoveryComplete = recoveryCheckpoints.every((checkpoint) => {
-    const record = session.recovery[checkpoint];
-    return Boolean(record?.left && record?.right);
-  });
-  const sessionComplete = baselineComplete && activityComplete && allRecoveryComplete;
+  const allRecoveryComplete = areAllRecoveryCheckpointsComplete(session);
+  const sessionComplete = isSessionComplete(session);
 
   function openMeasurement(phase: 'baseline' | 'recovery', side: KneeSide, checkpoint: string) {
     router.push({
@@ -78,7 +90,7 @@ export default function SessionOverviewScreen() {
 
   function openCheckpoint(checkpoint: string) {
     const record = session.recovery[checkpoint];
-    if (record?.left && record?.right) {
+    if (getCheckpointStatus(record) === 'complete') {
       router.push({
         pathname: '/session/[sessionId]/checkpoint',
         params: { sessionId, checkpoint },
@@ -89,15 +101,7 @@ export default function SessionOverviewScreen() {
   }
 
   const elapsedMinutes = Math.floor(session.activity.elapsedSeconds / 60);
-  const nextAction = !baselineComplete
-    ? 'Complete your pre-activity baseline'
-    : !activityComplete
-      ? activityInProgress
-        ? 'Return to your activity recording'
-        : 'Start your activity'
-      : !immediateComplete
-        ? 'Complete the post-activity check'
-        : 'Continue recovery checks';
+  const nextAction = recommendedActionLabels[getRecommendedAction(session)];
 
   return (
     <Page>
@@ -186,12 +190,20 @@ export default function SessionOverviewScreen() {
           }
         />
         {activityComplete ? (
-          <Row label="Activity load" value="82 · High" icon="speedometer-outline" />
+          <Row
+            label="Activity load"
+            value={
+              session.activity.metrics
+                ? `${session.activity.metrics.loadIndex} · ${session.activity.metrics.loadLevel}`
+                : 'Not calculated'
+            }
+            icon="speedometer-outline"
+          />
         ) : null}
         {activityInProgress ? (
           <Row
             label="Live samples"
-            value={String(session.activity.elapsedSeconds * 50)}
+            value={String(session.activity.elapsedSeconds * DEMO_SAMPLE_RATE_HZ)}
             icon="pulse-outline"
           />
         ) : null}
@@ -226,8 +238,9 @@ export default function SessionOverviewScreen() {
         tone={allRecoveryComplete ? 'complete' : activityComplete ? 'active' : 'pending'}>
         {recoveryCheckpoints.map((checkpoint) => {
           const record = session.recovery[checkpoint];
-          const complete = Boolean(record?.left && record?.right);
-          const partiallyComplete = Boolean(record?.left || record?.right);
+          const checkpointStatus = getCheckpointStatus(record);
+          const complete = checkpointStatus === 'complete';
+          const partiallyComplete = checkpointStatus === 'partial';
           const label = checkpoint === '0' ? 'Post activity' : `${checkpoint} min`;
           const status = complete
             ? 'Complete'

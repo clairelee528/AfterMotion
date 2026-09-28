@@ -106,7 +106,7 @@ export default function NewSessionScreen() {
           const sessionId = createSession({
             activityType: activity,
             injuredSide,
-            source,
+            measurementSource: source,
           });
           router.replace({
             pathname: '/session/[sessionId]',

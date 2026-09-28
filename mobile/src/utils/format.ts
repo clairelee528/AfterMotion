@@ -2,6 +2,11 @@ export function formatTemperature(value: number) {
   return `${value.toFixed(1)}°C`;
 }
 
+export function formatSignedTemperature(value: number) {
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(1)}°C`;
+}
+
 export function formatDuration(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60);
   if (minutes < 60) return `${minutes} min`;

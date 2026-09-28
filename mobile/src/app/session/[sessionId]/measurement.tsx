@@ -18,9 +18,10 @@ import {
   Value,
   wireframeStyles,
 } from '@/components/ui';
-import type { KneeSide } from '@/domain/models';
+import { getDemoMeasurementReading } from '@/data/demo-fixtures';
+import { isRecoveryCheckpoint, type KneeSide } from '@/domain/models';
 import { useSessionStore } from '@/state/session-store';
-import { formatScore } from '@/utils/format';
+import { formatScore, formatTemperature } from '@/utils/format';
 
 type MeasurementPhase = 'baseline' | 'recovery';
 type MeasurementState =
@@ -81,6 +82,15 @@ export default function MeasurementScreen() {
   const session = sessions[params.sessionId];
   const currentRecord =
     phase === 'baseline' ? session?.baseline : session?.recovery[checkpoint];
+  const measurementCheckpoint =
+    phase === 'baseline' || !isRecoveryCheckpoint(checkpoint) ? 'baseline' : checkpoint;
+  const previewReading = getDemoMeasurementReading(side, measurementCheckpoint);
+  const sourceLabel =
+    session?.measurementSource === 'bluetooth'
+      ? 'Bluetooth sensor'
+      : session?.measurementSource === 'manual'
+        ? 'Manual entry'
+        : 'Demo data';
   const measurementOrder: KneeSide[] = ['left', 'right'];
   const nextSide = measurementOrder.find(
     (target) => target !== side && !currentRecord?.[target],
@@ -166,7 +176,7 @@ export default function MeasurementScreen() {
           label={measurementState === 'complete' ? 'Recorded' : 'Ready to capture'}
           tone={measurementState === 'complete' ? 'complete' : 'active'}
         />
-        <Row label="Source" value="Demo data" icon="radio-outline" />
+        <Row label="Source" value={sourceLabel} icon="radio-outline" />
         <Row label="Band tension" value={measurementState === 'tooLoose' ? 'Too loose' : 'Correct'} icon="resize-outline" />
         <Row label="Stability" value={measurementState === 'movement' ? 'Movement' : 'Stable'} icon="pulse-outline" />
         <Row label="Window" value="30 sec" icon="timer-outline" />
@@ -176,7 +186,10 @@ export default function MeasurementScreen() {
         <>
           <Card variant="data">
             <Label inverse>Measurement result</Label>
-            <Value inverse>Stretch 2,418 · 33.4°C</Value>
+            <Value inverse>
+              Stretch {previewReading.stretchValue.toLocaleString()} ·{' '}
+              {formatTemperature(previewReading.temperatureCelsius)}
+            </Value>
           </Card>
           <Card>
             <SectionTitle>Symptoms</SectionTitle>
@@ -191,8 +204,16 @@ export default function MeasurementScreen() {
                 />
               ))}
             </View>
-            <Row label="Stiffness" value={formatScore(2)} icon="body-outline" />
-            <Row label="Subjective swelling" value="Mild" icon="water-outline" />
+            <Row
+              label="Stiffness"
+              value={formatScore(currentRecord?.symptoms.stiffness ?? 2)}
+              icon="body-outline"
+            />
+            <Row
+              label="Subjective swelling"
+              value={currentRecord?.symptoms.swelling ?? 'mild'}
+              icon="water-outline"
+            />
           </Card>
         </>
       ) : null}

@@ -8,7 +8,7 @@ import type {
 export interface MeasurementRequest {
   sessionId: string;
   side: KneeSide;
-  minutesAfterActivity: number | null;
+  checkpoint: KneeMeasurement['checkpoint'];
   symptoms: SymptomRecord;
 }
 

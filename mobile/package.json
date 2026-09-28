@@ -29,6 +29,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
+    "verify:domain": "tsc -p tsconfig.verify.json && node scripts/verify-session-domain.cjs",
     "doctor": "expo-doctor",
     "lint": "expo lint"
   },

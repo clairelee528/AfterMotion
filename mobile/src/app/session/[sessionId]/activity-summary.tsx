@@ -13,39 +13,68 @@ import {
   Value,
   wireframeStyles,
 } from '@/components/ui';
+import { getDemoActivityMetrics } from '@/data/demo-fixtures';
 import { View } from 'react-native';
 import { useSessionStore } from '@/state/session-store';
 
 export default function ActivitySummaryScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
   const { sessions } = useSessionStore();
+  const session = sessions[sessionId];
+
+  if (!session) {
+    return (
+      <Page>
+        <PageHeading
+          eyebrow="Activity summary"
+          title="Session not found"
+          description="This activity is no longer stored on this device."
+        />
+        <Button label="Return to Training" onPress={() => router.dismissTo('/')} />
+      </Page>
+    );
+  }
+
   const durationMinutes = Math.max(
     1,
-    Math.round((sessions[sessionId]?.activity.elapsedSeconds ?? 0) / 60),
+    Math.round(session.activity.elapsedSeconds / 60),
   );
+  const metrics =
+    session.activity.metrics ?? getDemoActivityMetrics(session.activity.elapsedSeconds);
+  const loadLabel = metrics.loadLevel.charAt(0).toUpperCase() + metrics.loadLevel.slice(1);
 
   return (
     <Page>
       <PageHeading
         eyebrow="Activity complete"
-        title="High activity load"
-        highlight="82 · HIGH"
+        title={`${loadLabel} activity load`}
+        highlight={`${metrics.loadIndex} · ${metrics.loadLevel.toUpperCase()}`}
         description="This describes what you did, not whether your knee was injured or safe."
       />
       <Card variant="data">
         <StatusTag label="Activity complete" tone="complete" />
         <Label inverse>Activity Load Index</Label>
-        <Value inverse>82 · High</Value>
+        <Value inverse>{metrics.loadIndex} · {loadLabel}</Value>
         <View style={wireframeStyles.choiceGrid}>
           <MetricTile label="Duration" value={String(durationMinutes)} unit="min" highlighted />
-          <MetricTile label="Decelerations" value="18" />
+          <MetricTile label="Decelerations" value={String(metrics.decelerationEventCount)} />
         </View>
-        <Row label="Movement intensity" value="High" icon="speedometer-outline" inverse />
-        <Row label="Impact-like events" value="14" icon="flash-outline" inverse />
+        <Row
+          label="Movement intensity"
+          value={String(metrics.movementIntensity)}
+          icon="speedometer-outline"
+          inverse
+        />
+        <Row
+          label="Impact-like events"
+          value={String(metrics.impactLikeEventCount)}
+          icon="flash-outline"
+          inverse
+        />
       </Card>
       <Notice
-        title="Demo load"
-        body="These values are fixed for the Day 2 prototype. Real IMU processing is planned for Day 6."
+        title="Simulated load"
+        body="These repeatable metrics come from the demo data source. Real IMU processing will use the same fields later."
         tone="info"
       />
       <Button

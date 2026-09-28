@@ -16,8 +16,19 @@ import {
   Value,
   wireframeStyles,
 } from '@/components/ui';
+import {
+  getCompletedRecoveryCount,
+  getLastCompletedRecoveryMinutes,
+  getSwellingSeries,
+  getTemperatureSeries,
+} from '@/domain/session-selectors';
 import { useSessionStore } from '@/state/session-store';
-import { formatDuration, formatScore, formatSignedPercent } from '@/utils/format';
+import {
+  formatDuration,
+  formatScore,
+  formatSignedPercent,
+  formatSignedTemperature,
+} from '@/utils/format';
 
 const activityNames: Record<string, string> = {
   badminton: 'Badminton',
@@ -28,66 +39,101 @@ const activityNames: Record<string, string> = {
   tennis: 'Tennis',
 };
 
-const checkpoints = ['0', '15', '30', '45', '60'];
 const chartLabels = ['Before', 'Post', '15m', '30m', '45m', '60m'];
-const swellingScores = { normal: 0, mild: 1, moderate: 2, significant: 3 } as const;
 const swellingLabels = ['None', 'Mild', 'Moderate', 'Significant'];
 
 export default function SessionSummaryScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
   const { sessions } = useSessionStore();
   const session = sessions[sessionId];
-  const completeChecks = session
-    ? Object.values(session.recovery).filter((record) => record.left && record.right).length
-    : 4;
-  const duration = session ? formatDuration(session.activity.elapsedSeconds) : '68 min';
-  const activity = session ? activityNames[session.activityType] : 'Frisbee';
-  const endedEarly = session?.endedEarly ?? false;
-  const recoveryRecords = checkpoints.map((checkpoint) => session?.recovery[checkpoint]);
-  const baselineWasRecorded = Boolean(session?.baseline.left || session?.baseline.right);
-  const swellingValues = [
-    baselineWasRecorded && session ? swellingScores[session.baseline.symptoms.swelling] : null,
-    ...recoveryRecords.map((record) =>
-      record?.left || record?.right ? swellingScores[record.symptoms.swelling] : null,
-    ),
-  ];
-  const leftTemperatures = [
-    session?.baseline.left?.temperatureCelsius ?? null,
-    ...recoveryRecords.map((record) => record?.left?.temperatureCelsius ?? null),
-  ];
-  const rightTemperatures = [
-    session?.baseline.right?.temperatureCelsius ?? null,
-    ...recoveryRecords.map((record) => record?.right?.temperatureCelsius ?? null),
-  ];
+
+  if (!session) {
+    return (
+      <Page>
+        <PageHeading
+          eyebrow="Session summary"
+          title="Session not found"
+          description="This session is no longer stored on this device."
+        />
+        <Button label="Return to Training" onPress={() => router.dismissTo('/')} />
+      </Page>
+    );
+  }
+
+  const completeChecks = getCompletedRecoveryCount(session);
+  const duration = formatDuration(session.activity.elapsedSeconds);
+  const activity = activityNames[session.activityType];
+  const endedEarly = session.endedEarly;
+  const metrics = session.activity.metrics;
+  const swellingValues = getSwellingSeries(session);
+  const leftTemperatures = getTemperatureSeries(session, 'left');
+  const rightTemperatures = getTemperatureSeries(session, 'right');
+  const trackedMinutes = getLastCompletedRecoveryMinutes(session);
+  const postActivity = session.recovery['0'];
+  const responsePercent = (side: 'left' | 'right') => {
+    const baseline = session.baseline[side]?.stretchValue;
+    const post = postActivity?.[side]?.stretchValue;
+    return baseline && post ? ((post - baseline) / baseline) * 100 : 0;
+  };
+  const temperatureChange = (side: 'left' | 'right') => {
+    const baseline = session.baseline[side]?.temperatureCelsius;
+    const post = postActivity?.[side]?.temperatureCelsius;
+    return baseline !== undefined && post !== undefined ? post - baseline : 0;
+  };
 
   return (
     <Page>
       <PageHeading
         eyebrow="Session summary"
-        title={endedEarly ? 'Session ended with partial data' : 'Your knee moved toward baseline'}
-        highlight={endedEarly ? 'ENDED EARLY' : '48 MIN RECOVERY'}
+        title={endedEarly ? 'Session ended with partial data' : 'Review your knee response'}
+        highlight={
+          endedEarly
+            ? 'ENDED EARLY'
+            : trackedMinutes === null
+              ? 'ACTIVITY RECORDED'
+              : `${trackedMinutes} MIN TRACKED`
+        }
         description={`${activity} · Saved on this device`}
       />
       <Card variant="data">
         <StatusTag label={endedEarly ? 'Partial record' : 'Session complete'} tone={endedEarly ? 'warning' : 'complete'} />
         <Label inverse>Activity Load Index</Label>
-        <Value inverse>82 · High</Value>
+        <Value inverse>
+          {metrics ? `${metrics.loadIndex} · ${metrics.loadLevel}` : 'Not calculated'}
+        </Value>
         <View style={wireframeStyles.choiceGrid}>
           <MetricTile label="Duration" value={duration} highlighted />
           <MetricTile label="Recovery checks" value={String(completeChecks)} unit="/ 5" />
         </View>
-        <Row label="Sharp decelerations" value="18" icon="trending-down-outline" inverse />
+        <Row
+          label="Sharp decelerations"
+          value={metrics ? String(metrics.decelerationEventCount) : '—'}
+          icon="trending-down-outline"
+          inverse
+        />
       </Card>
 
       <Card>
         <SectionTitle>How each knee responded</SectionTitle>
         <View style={wireframeStyles.choiceGrid}>
-          <MetricTile label="Right response" value={formatSignedPercent(1.5)} />
-          <MetricTile label="Left response" value={formatSignedPercent(0.4)} />
+          <MetricTile label="Right response" value={formatSignedPercent(responsePercent('right'))} />
+          <MetricTile label="Left response" value={formatSignedPercent(responsePercent('left'))} />
         </View>
-        <Row label="Right temperature" value="+0.7°C" icon="thermometer-outline" />
-        <Row label="Left temperature" value="+0.3°C" icon="thermometer-outline" />
-        <Row label="Reported pain" value={formatScore(2)} icon="fitness-outline" />
+        <Row
+          label="Right temperature change"
+          value={formatSignedTemperature(temperatureChange('right'))}
+          icon="thermometer-outline"
+        />
+        <Row
+          label="Left temperature change"
+          value={formatSignedTemperature(temperatureChange('left'))}
+          icon="thermometer-outline"
+        />
+        <Row
+          label="Reported pain"
+          value={formatScore(postActivity?.symptoms.pain ?? session.baseline.symptoms.pain)}
+          icon="fitness-outline"
+        />
       </Card>
 
       <Card>
