@@ -8,7 +8,6 @@ import {
 } from 'react';
 
 import type {
-  ActivityStatus,
   CheckpointRecord,
   CreateSessionInput,
   KneeMeasurement,
@@ -17,6 +16,17 @@ import type {
   SessionState,
   SymptomRecord,
 } from '@/domain/models';
+import {
+  finishActivityRecord,
+  pauseActivityRecord,
+  startActivityRecord,
+} from '@/domain/activity-transitions';
+import {
+  getActiveActivityFeatures,
+  releaseActivitySignalProcessor,
+  type ActivityFeatures,
+} from '@/domain/activity-processing';
+import { calculateActivityMetrics } from '@/domain/activity-load';
 import {
   saveMeasurementToSession,
   saveSymptomsToSession,
@@ -39,18 +49,20 @@ interface SessionStoreValue extends SessionState {
   createSession: (input: CreateSessionInput) => string;
   loadDemoFixtures: () => void;
   endSession: (sessionId: string, endedEarly: boolean) => void;
-  finishActivity: (sessionId: string, elapsedSeconds: number) => void;
+  finishActivity: (
+    sessionId: string,
+    features?: ActivityFeatures,
+    nowIso?: string,
+  ) => void;
+  pauseActivity: (sessionId: string, nowIso?: string) => void;
   saveFeelings: (
     sessionId: string,
     checkpoint: MeasurementCheckpoint,
     symptoms: SymptomRecord,
   ) => void;
   saveMeasurement: (measurement: KneeMeasurement) => void;
-  setActivityStatus: (
-    sessionId: string,
-    status: ActivityStatus,
-    elapsedSeconds?: number,
-  ) => void;
+  saveActivitySampleCount: (sessionId: string, sampleCount: number) => void;
+  startActivity: (sessionId: string, nowIso?: string) => void;
 }
 
 const defaultSymptoms: SymptomRecord = {
@@ -137,6 +149,7 @@ export function SessionStoreProvider({ children }: { children: ReactNode }) {
       activity: {
         status: 'planned',
         elapsedSeconds: 0,
+        sampleCount: 0,
         startedAt: null,
         endedAt: null,
         metrics: null,
@@ -163,9 +176,38 @@ export function SessionStoreProvider({ children }: { children: ReactNode }) {
   }
 
   function endSession(sessionId: string, endedEarly: boolean) {
+    const liveFeatures = getActiveActivityFeatures(sessionId);
+    releaseActivitySignalProcessor(sessionId);
     setState((current) => {
       const session = current.sessions[sessionId];
       if (!session) return current;
+      const nowIso = new Date().toISOString();
+      const stoppedActivity =
+        session.activity.status === 'active' || session.activity.status === 'paused'
+          ? finishActivityRecord(session.activity, nowIso)
+          : session.activity;
+      const activity =
+        stoppedActivity.status === 'complete' && !stoppedActivity.metrics
+          ? (() => {
+              const sampleCount = Math.max(
+                stoppedActivity.sampleCount,
+                liveFeatures?.sampleCount ?? 0,
+              );
+              return {
+                ...stoppedActivity,
+                sampleCount,
+                metrics: liveFeatures
+                  ? calculateActivityMetrics(
+                      { ...liveFeatures, sampleCount },
+                      stoppedActivity.elapsedSeconds,
+                    )
+                  : {
+                      ...getDemoActivityMetrics(stoppedActivity.elapsedSeconds),
+                      sampleCount,
+                    },
+              };
+            })()
+          : stoppedActivity;
       return {
         currentSessionId:
           current.currentSessionId === sessionId ? null : current.currentSessionId,
@@ -174,18 +216,10 @@ export function SessionStoreProvider({ children }: { children: ReactNode }) {
           [sessionId]: {
             ...session,
             status: endedEarly ? 'endedEarly' : 'complete',
-            updatedAt: new Date().toISOString(),
-            closedAt: new Date().toISOString(),
+            updatedAt: nowIso,
+            closedAt: nowIso,
             endedEarly,
-            activity:
-              session.activity.status === 'active' || session.activity.status === 'paused'
-                ? {
-                    ...session.activity,
-                    status: 'complete',
-                    startedAt: null,
-                    endedAt: new Date().toISOString(),
-                  }
-                : session.activity,
+            activity,
           },
         },
       };
@@ -202,40 +236,62 @@ export function SessionStoreProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  function setActivityStatus(
-    sessionId: string,
-    status: ActivityStatus,
-    elapsedSeconds?: number,
-  ) {
+  function startActivity(sessionId: string, nowIso = new Date().toISOString()) {
     updateSession(sessionId, (session) => ({
       ...session,
-      status: status === 'planned' ? session.status : 'activity',
-      updatedAt: new Date().toISOString(),
+      status: session.activity.status === 'complete' ? session.status : 'activity',
+      updatedAt: nowIso,
+      activity: startActivityRecord(session.activity, nowIso),
+    }));
+  }
+
+  function pauseActivity(sessionId: string, nowIso = new Date().toISOString()) {
+    updateSession(sessionId, (session) => ({
+      ...session,
+      updatedAt: nowIso,
+      activity: pauseActivityRecord(session.activity, nowIso),
+    }));
+  }
+
+  function saveActivitySampleCount(sessionId: string, sampleCount: number) {
+    updateSession(sessionId, (session) => ({
+      ...session,
       activity: {
         ...session.activity,
-        status,
-        elapsedSeconds: elapsedSeconds ?? session.activity.elapsedSeconds,
-        startedAt:
-          status === 'active' ? new Date().toISOString() : null,
+        sampleCount: Math.max(session.activity.sampleCount, Math.floor(sampleCount)),
       },
     }));
   }
 
-  function finishActivity(sessionId: string, elapsedSeconds: number) {
-    const metrics = getDemoActivityMetrics(elapsedSeconds);
-    updateSession(sessionId, (session) => ({
-      ...session,
-      status: 'recovery',
-      updatedAt: new Date().toISOString(),
-      activity: {
-        ...session.activity,
-        status: 'complete',
-        elapsedSeconds,
-        startedAt: null,
-        endedAt: new Date().toISOString(),
-        metrics,
-      },
-    }));
+  function finishActivity(
+    sessionId: string,
+    features?: ActivityFeatures,
+    nowIso = new Date().toISOString(),
+  ) {
+    updateSession(sessionId, (session) => {
+      const activity = finishActivityRecord(session.activity, nowIso);
+      const finalSampleCount = Math.max(
+        activity.sampleCount,
+        Math.floor(features?.sampleCount ?? activity.sampleCount),
+      );
+      const fallbackMetrics = getDemoActivityMetrics(activity.elapsedSeconds);
+      const calculatedMetrics = features
+        ? calculateActivityMetrics(
+            { ...features, sampleCount: finalSampleCount },
+            activity.elapsedSeconds,
+          )
+        : { ...fallbackMetrics, sampleCount: finalSampleCount };
+      return {
+        ...session,
+        status: 'recovery',
+        updatedAt: nowIso,
+        activity: {
+          ...activity,
+          sampleCount: finalSampleCount,
+          metrics: activity.metrics ?? calculatedMetrics,
+        },
+      };
+    });
   }
 
   function loadDemoFixtures() {
@@ -256,9 +312,11 @@ export function SessionStoreProvider({ children }: { children: ReactNode }) {
     endSession,
     finishActivity,
     loadDemoFixtures,
+    pauseActivity,
     saveFeelings,
+    saveActivitySampleCount,
     saveMeasurement,
-    setActivityStatus,
+    startActivity,
   };
 
   return <SessionStoreContext.Provider value={value}>{children}</SessionStoreContext.Provider>;

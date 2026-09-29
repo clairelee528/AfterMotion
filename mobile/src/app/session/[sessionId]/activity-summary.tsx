@@ -66,6 +66,12 @@ export default function ActivitySummaryScreen() {
           inverse
         />
         <Row
+          label="Acceleration peaks"
+          value={String(metrics.accelerationPeakCount)}
+          icon="trending-up-outline"
+          inverse
+        />
+        <Row
           label="Impact-like events"
           value={String(metrics.impactLikeEventCount)}
           icon="flash-outline"
@@ -73,8 +79,8 @@ export default function ActivitySummaryScreen() {
         />
       </Card>
       <Notice
-        title="Simulated load"
-        body="These repeatable metrics come from the demo data source. Real IMU processing will use the same fields later."
+        title="Relative activity load"
+        body="This repeatable prototype score combines duration, movement intensity, acceleration peaks, decelerations, and impact-like events. It does not estimate injury risk or medical safety."
         tone="info"
       />
       <Button

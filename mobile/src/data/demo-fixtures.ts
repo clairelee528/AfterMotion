@@ -8,8 +8,9 @@ import {
   type Session,
   type SymptomRecord,
 } from '../domain/models';
+import { ACTIVITY_SAMPLE_RATE_HZ } from './activity-source';
 
-export const DEMO_SAMPLE_RATE_HZ = 50;
+export const DEMO_SAMPLE_RATE_HZ = ACTIVITY_SAMPLE_RATE_HZ;
 
 const checkpointTemperatureOffset: Record<MeasurementCheckpoint, number> = {
   baseline: 0,
@@ -119,6 +120,7 @@ export function createDemoSessionFixtures(): Record<string, Session> {
       activity: {
         status: 'paused',
         elapsedSeconds: 18 * 60,
+        sampleCount: 18 * 60 * DEMO_SAMPLE_RATE_HZ,
         startedAt: null,
         endedAt: null,
         metrics: null,
@@ -139,6 +141,7 @@ export function createDemoSessionFixtures(): Record<string, Session> {
       activity: {
         status: 'complete',
         elapsedSeconds: completeMetrics.durationSeconds,
+        sampleCount: completeMetrics.sampleCount,
         startedAt: '2026-09-25T01:20:00.000Z',
         endedAt: '2026-09-25T02:28:00.000Z',
         metrics: completeMetrics,
@@ -159,6 +162,7 @@ export function createDemoSessionFixtures(): Record<string, Session> {
       activity: {
         status: 'complete',
         elapsedSeconds: partialMetrics.durationSeconds,
+        sampleCount: partialMetrics.sampleCount,
         startedAt: '2026-09-23T01:20:00.000Z',
         endedAt: '2026-09-23T01:52:00.000Z',
         metrics: partialMetrics,

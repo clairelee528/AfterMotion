@@ -13,7 +13,6 @@ import {
   StageCard,
   TimelineItem,
 } from '@/components/ui';
-import { DEMO_SAMPLE_RATE_HZ } from '@/data/demo-fixtures';
 import { recoveryCheckpoints, type KneeSide } from '@/domain/models';
 import {
   areAllRecoveryCheckpointsComplete,
@@ -248,7 +247,7 @@ export default function SessionOverviewScreen() {
         {activityInProgress ? (
           <Row
             label="Live samples"
-            value={String(session.activity.elapsedSeconds * DEMO_SAMPLE_RATE_HZ)}
+            value={String(session.activity.sampleCount)}
             icon="pulse-outline"
           />
         ) : null}

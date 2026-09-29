@@ -19,7 +19,7 @@ import { useSessionStore } from '@/state/session-store';
 
 export default function SleeveSetupScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
-  const { setActivityStatus } = useSessionStore();
+  const { startActivity } = useSessionStore();
   const [mode, setMode] = useState<'demo' | 'manual' | 'bluetooth'>('demo');
 
   return (
@@ -63,7 +63,7 @@ export default function SleeveSetupScreen() {
         disabled={mode === 'bluetooth'}
         label="Start activity"
         onPress={() => {
-          setActivityStatus(sessionId, 'active', 0);
+          startActivity(sessionId);
           router.push({
             pathname: '/session/[sessionId]/activity',
             params: { sessionId },

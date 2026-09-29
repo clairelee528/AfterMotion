@@ -73,6 +73,7 @@ export interface ActivityMetrics {
 export interface ActivityRecord {
   status: ActivityStatus;
   elapsedSeconds: number;
+  sampleCount: number;
   startedAt: string | null;
   endedAt: string | null;
   metrics: ActivityMetrics | null;

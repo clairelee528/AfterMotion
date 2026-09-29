@@ -12,10 +12,15 @@
   "include": [
     "src/domain/models.ts",
     "src/domain/measurement-timing.ts",
+    "src/domain/activity-transitions.ts",
+    "src/domain/activity-processing.ts",
+    "src/domain/activity-load.ts",
     "src/domain/session-mutations.ts",
     "src/domain/session-selectors.ts",
+    "src/data/activity-source.ts",
     "src/data/demo-fixtures.ts",
     "src/data/measurement-source.ts",
+    "src/data/mock-activity-source.ts",
     "src/data/mock-measurement-source.ts",
     "src/state/session-persistence.ts"
   ]

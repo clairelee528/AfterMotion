@@ -183,6 +183,18 @@ function normalizeSession(value: unknown, fallbackId: string): Session | null {
     activity: {
       status: activityStatus,
       elapsedSeconds: Math.max(0, finiteNumber(activity.elapsedSeconds, 0)),
+      sampleCount: Math.max(
+        0,
+        finiteNumber(
+          activity.sampleCount,
+          finiteNumber(
+            activity.metrics && isRecord(activity.metrics)
+              ? activity.metrics.sampleCount
+              : undefined,
+            0,
+          ),
+        ),
+      ),
       startedAt: nullableString(activity.startedAt),
       endedAt: nullableString(activity.endedAt),
       metrics: normalizeActivityMetrics(activity.metrics),
