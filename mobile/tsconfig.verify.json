@@ -17,6 +17,8 @@
     "src/domain/activity-load.ts",
     "src/domain/session-mutations.ts",
     "src/domain/session-selectors.ts",
+    "src/domain/recovery-metrics.ts",
+    "src/domain/recovery-status.ts",
     "src/data/activity-source.ts",
     "src/data/demo-fixtures.ts",
     "src/data/measurement-source.ts",

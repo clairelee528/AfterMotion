@@ -131,7 +131,25 @@ export function getTemperatureSeries(
 
 export function getSwellingSeries(session: Session): (number | null)[] {
   const score = (record: CheckpointRecord): number | null =>
-    record.left || record.right ? swellingScores[record.symptoms.swelling] : null;
+    record.symptomsRecordedAt ? swellingScores[record.symptoms.swelling] : null;
+  return [
+    score(session.baseline),
+    ...recoveryCheckpoints.map((checkpoint) => score(session.recovery[checkpoint])),
+  ];
+}
+
+export function getPainSeries(session: Session): (number | null)[] {
+  const score = (record: CheckpointRecord): number | null =>
+    record.symptomsRecordedAt ? record.symptoms.pain : null;
+  return [
+    score(session.baseline),
+    ...recoveryCheckpoints.map((checkpoint) => score(session.recovery[checkpoint])),
+  ];
+}
+
+export function getStiffnessSeries(session: Session): (number | null)[] {
+  const score = (record: CheckpointRecord): number | null =>
+    record.symptomsRecordedAt ? record.symptoms.stiffness : null;
   return [
     score(session.baseline),
     ...recoveryCheckpoints.map((checkpoint) => score(session.recovery[checkpoint])),

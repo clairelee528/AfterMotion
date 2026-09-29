@@ -19,9 +19,17 @@ import {
 import {
   getCompletedRecoveryCount,
   getLastCompletedRecoveryMinutes,
+  getPainSeries,
+  getStiffnessSeries,
   getSwellingSeries,
-  getTemperatureSeries,
 } from '@/domain/session-selectors';
+import {
+  getCircumferenceResponseSeries,
+  getCircumferenceResponse,
+  getTemperatureDeltaSeries,
+  getTemperatureResponse,
+} from '@/domain/recovery-metrics';
+import { getRecoveryTime } from '@/domain/recovery-status';
 import { useSessionStore } from '@/state/session-store';
 import {
   formatDuration,
@@ -66,20 +74,25 @@ export default function SessionSummaryScreen() {
   const endedEarly = session.endedEarly;
   const metrics = session.activity.metrics;
   const swellingValues = getSwellingSeries(session);
-  const leftTemperatures = getTemperatureSeries(session, 'left');
-  const rightTemperatures = getTemperatureSeries(session, 'right');
+  const painValues = getPainSeries(session);
+  const stiffnessValues = getStiffnessSeries(session);
+  const leftStretchResponses = getCircumferenceResponseSeries(session, 'left');
+  const rightStretchResponses = getCircumferenceResponseSeries(session, 'right');
+  const leftTemperatureDeltas = getTemperatureDeltaSeries(session, 'left');
+  const rightTemperatureDeltas = getTemperatureDeltaSeries(session, 'right');
   const trackedMinutes = getLastCompletedRecoveryMinutes(session);
   const postActivity = session.recovery['0'];
-  const responsePercent = (side: 'left' | 'right') => {
-    const baseline = session.baseline[side]?.stretchValue;
-    const post = postActivity?.[side]?.stretchValue;
-    return baseline && post ? ((post - baseline) / baseline) * 100 : 0;
-  };
-  const temperatureChange = (side: 'left' | 'right') => {
-    const baseline = session.baseline[side]?.temperatureCelsius;
-    const post = postActivity?.[side]?.temperatureCelsius;
-    return baseline !== undefined && post !== undefined ? post - baseline : 0;
-  };
+  const circumferenceResponse = getCircumferenceResponse(session, '0');
+  const temperatureResponse = getTemperatureResponse(session, '0');
+  const recoveryTime = getRecoveryTime(session);
+  const recoveryTimeLabel =
+    recoveryTime.status === 'recovered'
+      ? recoveryTime.minutes === 0
+        ? 'Post activity'
+        : `${recoveryTime.minutes} min`
+      : recoveryTime.status === 'notRecovered'
+        ? '> 60 min'
+        : 'Insufficient data';
 
   return (
     <Page>
@@ -115,19 +128,64 @@ export default function SessionSummaryScreen() {
 
       <Card>
         <SectionTitle>How each knee responded</SectionTitle>
+        <Row
+          label="Recovery time"
+          value={recoveryTimeLabel}
+          icon="time-outline"
+        />
         <View style={wireframeStyles.choiceGrid}>
-          <MetricTile label="Right response" value={formatSignedPercent(responsePercent('right'))} />
-          <MetricTile label="Left response" value={formatSignedPercent(responsePercent('left'))} />
+          <MetricTile
+            label="Right stretch response"
+            value={
+              circumferenceResponse.rightPercent === null
+                ? '—'
+                : formatSignedPercent(circumferenceResponse.rightPercent)
+            }
+          />
+          <MetricTile
+            label="Left stretch response"
+            value={
+              circumferenceResponse.leftPercent === null
+                ? '—'
+                : formatSignedPercent(circumferenceResponse.leftPercent)
+            }
+          />
         </View>
         <Row
+          label={`${circumferenceResponse.injuredSide === 'left' ? 'Left' : 'Right'} vs contralateral stretch`}
+          value={
+            circumferenceResponse.contralateralDifferencePercent === null
+              ? '—'
+              : formatSignedPercent(circumferenceResponse.contralateralDifferencePercent)
+          }
+          icon="git-compare-outline"
+        />
+        <Row
           label="Right temperature change"
-          value={formatSignedTemperature(temperatureChange('right'))}
+          value={
+            temperatureResponse.rightDeltaCelsius === null
+              ? '—'
+              : formatSignedTemperature(temperatureResponse.rightDeltaCelsius)
+          }
           icon="thermometer-outline"
         />
         <Row
           label="Left temperature change"
-          value={formatSignedTemperature(temperatureChange('left'))}
+          value={
+            temperatureResponse.leftDeltaCelsius === null
+              ? '—'
+              : formatSignedTemperature(temperatureResponse.leftDeltaCelsius)
+          }
           icon="thermometer-outline"
+        />
+        <Row
+          label={`${temperatureResponse.injuredSide === 'left' ? 'Left' : 'Right'} vs contralateral temperature`}
+          value={
+            temperatureResponse.currentAsymmetryCelsius === null
+              ? '—'
+              : formatSignedTemperature(temperatureResponse.currentAsymmetryCelsius)
+          }
+          icon="git-compare-outline"
         />
         <Row
           label="Reported pain"
@@ -137,29 +195,58 @@ export default function SessionSummaryScreen() {
       </Card>
 
       <Card>
-        <SectionTitle>Swelling across recovery</SectionTitle>
+        <SectionTitle>Band stretch response</SectionTitle>
         <RecoveryLineChart
           labels={chartLabels}
-          series={[{ label: 'Reported swelling', color: '#087885', values: swellingValues }]}
-          valueFormatter={(value) => swellingLabels[Math.max(0, Math.min(3, Math.round(value)))]}
+          series={[
+            { label: 'Left knee', color: '#3976A8', values: leftStretchResponses },
+            { label: 'Right knee', color: '#B8643F', values: rightStretchResponses },
+          ]}
+          valueFormatter={formatSignedPercent}
+        />
+        <Notice
+          title="Relative Recovery Band response"
+          body="Values show percentage change from each knee's own pre-activity reading, not centimeters."
+          tone="info"
         />
       </Card>
 
       <Card>
-        <SectionTitle>Temperature across recovery</SectionTitle>
+        <SectionTitle>Temperature response</SectionTitle>
         <RecoveryLineChart
           labels={chartLabels}
           series={[
-            { label: 'Left knee', color: '#3976A8', values: leftTemperatures },
-            { label: 'Right knee', color: '#B8643F', values: rightTemperatures },
+            { label: 'Left knee', color: '#3976A8', values: leftTemperatureDeltas },
+            { label: 'Right knee', color: '#B8643F', values: rightTemperatureDeltas },
           ]}
-          valueFormatter={(value) => `${value.toFixed(1)}°C`}
+          valueFormatter={formatSignedTemperature}
+        />
+      </Card>
+
+      <Card>
+        <SectionTitle>Pain and stiffness</SectionTitle>
+        <RecoveryLineChart
+          labels={chartLabels}
+          series={[
+            { label: 'Pain', color: '#B8643F', values: painValues },
+            { label: 'Stiffness', color: '#087885', values: stiffnessValues },
+          ]}
+          valueFormatter={(value) => `${value.toFixed(0)} / 10`}
+        />
+      </Card>
+
+      <Card>
+        <SectionTitle>Reported swelling</SectionTitle>
+        <RecoveryLineChart
+          labels={chartLabels}
+          series={[{ label: 'Swelling', color: '#087885', values: swellingValues }]}
+          valueFormatter={(value) => swellingLabels[Math.max(0, Math.min(3, Math.round(value)))]}
         />
       </Card>
 
       <Notice
         title="Personal baseline still developing"
-        body="Complete more comparable sessions to establish your typical response and recovery range."
+        body="The prototype range uses ≤0.5% stretch response, ≤0.5% side difference, ≤0.3°C temperature change, ≤0.3°C response difference, pain/stiffness no more than +1, and swelling no higher than this session's baseline. More sessions are needed to establish a truly personal range."
         tone="info"
       />
       <Notice

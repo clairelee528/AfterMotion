@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 
 import { BandPlacementGuide } from '@/components/band-placement-guide';
+import { RecoveryPreparationGuide } from '@/components/recovery-preparation-guide';
 import {
   Button,
   Card,
@@ -77,7 +78,7 @@ const stateCopy: Record<MeasurementState, { title: string; body: string }> = {
 };
 
 export default function MeasurementScreen() {
-  const { saveMeasurement, sessions } = useSessionStore();
+  const { hydrated, saveMeasurement, sessions } = useSessionStore();
   const params = useLocalSearchParams<{
     sessionId: string;
     phase: MeasurementPhase;
@@ -253,6 +254,49 @@ export default function MeasurementScreen() {
           ? 'warning'
           : 'info';
 
+  if (!session) {
+    return (
+      <Page>
+        <PageHeading
+          eyebrow="Measurement"
+          title={hydrated ? 'Session not found' : 'Restoring session'}
+          description={
+            hydrated
+              ? 'This session is no longer stored on this device.'
+              : 'Loading your locally saved measurement progress.'
+          }
+        />
+        {hydrated ? <Button label="Return to Training" onPress={() => router.dismissTo('/')} /> : null}
+      </Page>
+    );
+  }
+
+  if (
+    phase === 'recovery' &&
+    (!isRecoveryCheckpoint(checkpoint) || session.activity.status !== 'complete')
+  ) {
+    return (
+      <Page>
+        <PageHeading
+          eyebrow="Recovery check"
+          title="Checkpoint unavailable"
+          description="Recovery measurements become available after the activity has finished."
+        />
+        <Button
+          label="Return to session overview"
+          icon="grid-outline"
+          onPress={() =>
+            router.replace({
+              pathname: '/session/[sessionId]',
+              params: { sessionId: params.sessionId },
+            })
+          }
+          variant="secondary"
+        />
+      </Page>
+    );
+  }
+
   return (
     <Page>
       <PageHeading
@@ -267,6 +311,9 @@ export default function MeasurementScreen() {
           body="Remove the band from the left knee, then use the same marker and closure position on the right knee."
           tone="info"
         />
+      ) : null}
+      {phase === 'recovery' ? (
+        <RecoveryPreparationGuide checkpointLabel={stageLabel} />
       ) : null}
       <BandPlacementGuide
         side={side}

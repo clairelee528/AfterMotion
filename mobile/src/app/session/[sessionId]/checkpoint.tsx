@@ -16,8 +16,22 @@ import {
 import { View } from 'react-native';
 import { isRecoveryCheckpoint } from '@/domain/models';
 import { getNextMissingSide } from '@/domain/session-selectors';
+import {
+  assessRecoveryCheckpoint,
+  getRecoveryRangeLabel,
+} from '@/domain/recovery-status';
+import {
+  getCircumferenceResponse,
+  getTemperatureResponse,
+} from '@/domain/recovery-metrics';
 import { useSessionStore } from '@/state/session-store';
-import { formatRecordedTime, formatScore, formatTemperature } from '@/utils/format';
+import {
+  formatRecordedTime,
+  formatScore,
+  formatSignedPercent,
+  formatSignedTemperature,
+  formatTemperature,
+} from '@/utils/format';
 
 export default function CheckpointScreen() {
   const { sessionId, checkpoint = '0' } = useLocalSearchParams<{
@@ -37,6 +51,16 @@ export default function CheckpointScreen() {
     : safeCheckpoint === '0'
       ? 'Post-activity response'
       : `${safeCheckpoint} minute response`;
+  const circumferenceResponse = session
+    ? getCircumferenceResponse(session, safeCheckpoint)
+    : null;
+  const temperatureResponse = session
+    ? getTemperatureResponse(session, safeCheckpoint)
+    : null;
+  const recoveryAssessment =
+    session && !isBaseline
+      ? assessRecoveryCheckpoint(session, safeCheckpoint)
+      : null;
 
   function remeasure(side: 'left' | 'right') {
     router.push({
@@ -88,9 +112,52 @@ export default function CheckpointScreen() {
         description={
           checkInComplete
             ? 'Both knee measurements and your reported feelings are saved locally.'
-            : 'Both knee measurements are safe. Add your subjective check-in to complete this time point.'
+            : 'Both knee measurements are saved. Add your subjective check-in to complete this time point.'
         }
       />
+      {recoveryAssessment ? (
+        <Card>
+          <StatusTag
+            label={getRecoveryRangeLabel(recoveryAssessment.status)}
+            tone={
+              recoveryAssessment.status === 'withinBaselineRange'
+                ? 'complete'
+                : recoveryAssessment.status === 'aboveBaselineRange'
+                  ? 'warning'
+                  : 'info'
+            }
+          />
+          <SectionTitle>Personal baseline comparison</SectionTitle>
+          <Notice
+            title={
+              recoveryAssessment.status === 'withinBaselineRange'
+                ? 'Main indicators are back in range'
+                : recoveryAssessment.status === 'aboveBaselineRange'
+                  ? 'Some indicators remain outside range'
+                  : 'More data is needed'
+            }
+            body={
+              recoveryAssessment.status === 'aboveBaselineRange'
+                ? recoveryAssessment.outsideMetrics.join(', ')
+                : recoveryAssessment.status === 'withinBaselineRange'
+                  ? 'This checkpoint meets the prototype comparison rules for your own pre-activity baseline.'
+                  : 'Both knee measurements and the subjective check-in are required.'
+            }
+            tone={
+              recoveryAssessment.status === 'withinBaselineRange'
+                ? 'success'
+                : recoveryAssessment.status === 'aboveBaselineRange'
+                  ? 'warning'
+                  : 'info'
+            }
+          />
+          <Notice
+            title="Prototype comparison limits"
+            body="Stretch response ≤0.5%, side-to-side stretch difference ≤0.5%, temperature change ≤0.3°C, temperature-response difference ≤0.3°C, pain and stiffness no more than +1, and swelling no higher than baseline."
+            tone="info"
+          />
+        </Card>
+      ) : null}
       <Card>
         <SideBadge side="left" injured={session.injuredSide === 'left'} />
         <SectionTitle>Left knee</SectionTitle>
@@ -141,6 +208,91 @@ export default function CheckpointScreen() {
           variant="secondary"
         />
       </Card>
+      {!isBaseline && circumferenceResponse ? (
+        <Card>
+          <SectionTitle>Band stretch response</SectionTitle>
+          <View style={wireframeStyles.choiceGrid}>
+            <MetricTile
+              label="Left vs baseline"
+              value={
+                circumferenceResponse.leftPercent === null
+                  ? '—'
+                  : formatSignedPercent(circumferenceResponse.leftPercent)
+              }
+            />
+            <MetricTile
+              label="Right vs baseline"
+              value={
+                circumferenceResponse.rightPercent === null
+                  ? '—'
+                  : formatSignedPercent(circumferenceResponse.rightPercent)
+              }
+            />
+          </View>
+          <Row
+            label={`${circumferenceResponse.injuredSide === 'left' ? 'Left' : 'Right'} vs contralateral`}
+            value={
+              circumferenceResponse.contralateralDifferencePercent === null
+                ? '—'
+                : formatSignedPercent(
+                    circumferenceResponse.contralateralDifferencePercent,
+                  )
+            }
+            icon="git-compare-outline"
+          />
+          <Notice
+            title="Relative sensor response"
+            body="This percentage compares Recovery Band stretch with your own pre-activity baseline. It is not a circumference measurement in centimeters."
+            tone="info"
+          />
+        </Card>
+      ) : null}
+      {!isBaseline && temperatureResponse ? (
+        <Card>
+          <SectionTitle>Temperature response</SectionTitle>
+          <View style={wireframeStyles.choiceGrid}>
+            <MetricTile
+              label="Left vs baseline"
+              value={
+                temperatureResponse.leftDeltaCelsius === null
+                  ? '—'
+                  : formatSignedTemperature(temperatureResponse.leftDeltaCelsius)
+              }
+            />
+            <MetricTile
+              label="Right vs baseline"
+              value={
+                temperatureResponse.rightDeltaCelsius === null
+                  ? '—'
+                  : formatSignedTemperature(temperatureResponse.rightDeltaCelsius)
+              }
+            />
+          </View>
+          <Row
+            label={`${temperatureResponse.injuredSide === 'left' ? 'Left' : 'Right'} vs contralateral now`}
+            value={
+              temperatureResponse.currentAsymmetryCelsius === null
+                ? '—'
+                : formatSignedTemperature(temperatureResponse.currentAsymmetryCelsius)
+            }
+            icon="thermometer-outline"
+          />
+          <Row
+            label="Difference in temperature response"
+            value={
+              temperatureResponse.responseDifferenceCelsius === null
+                ? '—'
+                : formatSignedTemperature(temperatureResponse.responseDifferenceCelsius)
+            }
+            icon="git-compare-outline"
+          />
+          <Notice
+            title="Compared with your own baseline"
+            body="Temperature changes describe this session's skin-temperature response. They do not diagnose inflammation or injury."
+            tone="info"
+          />
+        </Card>
+      ) : null}
       <Card>
         <StatusTag
           label={checkInComplete ? 'Subjective check-in recorded' : 'Check-in needed'}

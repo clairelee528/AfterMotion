@@ -14,6 +14,7 @@ import {
   wireframeStyles,
 } from '@/components/ui';
 import { getDemoActivityMetrics } from '@/data/demo-fixtures';
+import { getCheckpointStatus, getNextMissingSide } from '@/domain/session-selectors';
 import { View } from 'react-native';
 import { useSessionStore } from '@/state/session-store';
 
@@ -42,6 +43,34 @@ export default function ActivitySummaryScreen() {
   const metrics =
     session.activity.metrics ?? getDemoActivityMetrics(session.activity.elapsedSeconds);
   const loadLabel = metrics.loadLevel.charAt(0).toUpperCase() + metrics.loadLevel.slice(1);
+  const postActivityRecord = session.recovery['0'];
+  const postActivityStatus = getCheckpointStatus(postActivityRecord);
+
+  function openPostActivityCheck() {
+    if (postActivityStatus === 'complete') {
+      router.push({
+        pathname: '/session/[sessionId]/checkpoint',
+        params: { sessionId, checkpoint: '0' },
+      });
+      return;
+    }
+    if (postActivityStatus === 'needsCheckIn') {
+      router.push({
+        pathname: '/session/[sessionId]/feelings',
+        params: { sessionId, checkpoint: '0', returnTo: 'checkpoint' },
+      });
+      return;
+    }
+    router.push({
+      pathname: '/session/[sessionId]/measurement',
+      params: {
+        sessionId,
+        phase: 'recovery',
+        side: getNextMissingSide(postActivityRecord) ?? 'left',
+        checkpoint: '0',
+      },
+    });
+  }
 
   return (
     <Page>
@@ -84,14 +113,17 @@ export default function ActivitySummaryScreen() {
         tone="info"
       />
       <Button
-        label="Measure post-activity response"
-        icon="scan-outline"
-        onPress={() =>
-          router.push({
-            pathname: '/session/[sessionId]/measurement',
-            params: { sessionId, phase: 'recovery', side: 'left', checkpoint: '0' },
-          })
+        label={
+          postActivityStatus === 'complete'
+            ? 'View post-activity response'
+            : postActivityStatus === 'needsCheckIn'
+              ? 'Complete post-activity feelings'
+              : postActivityStatus === 'partial'
+                ? 'Continue post-activity measurement'
+                : 'Measure post-activity response'
         }
+        icon="scan-outline"
+        onPress={openPostActivityCheck}
         variant="highlight"
       />
       <Button

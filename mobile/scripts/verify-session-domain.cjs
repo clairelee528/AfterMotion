@@ -12,8 +12,10 @@ const {
   getLatestClosedSession,
   getNextMissingSide,
   getNextSideAfterMeasurement,
+  getPainSeries,
   getRecommendedAction,
   getSessionStage,
+  getStiffnessSeries,
   getSwellingSeries,
   getTemperatureSeries,
   isSessionComplete,
@@ -50,6 +52,18 @@ const {
   calculateActivityMetrics,
   getActivityLoadLevel,
 } = require('../.verification-build/domain/activity-load.js');
+const {
+  calculateBandStretchResponse,
+  calculateTemperatureDelta,
+  getCircumferenceResponse,
+  getCircumferenceResponseSeries,
+  getTemperatureDeltaSeries,
+  getTemperatureResponse,
+} = require('../.verification-build/domain/recovery-metrics.js');
+const {
+  assessRecoveryCheckpoint,
+  getRecoveryTime,
+} = require('../.verification-build/domain/recovery-status.js');
 
 function verifyFixturesAndSelectors() {
   const sessions = createDemoSessionFixtures();
@@ -73,10 +87,13 @@ function verifyFixturesAndSelectors() {
   assert.equal(getCompletedRecoveryCount(complete), 5);
   assert.equal(getTemperatureSeries(complete, 'left').length, 6);
   assert.deepEqual(getSwellingSeries(complete), [1, 1, 1, 1, 1, 1]);
+  assert.deepEqual(getPainSeries(complete), [2, 2, 2, 2, 2, 2]);
+  assert.deepEqual(getStiffnessSeries(complete), [2, 2, 2, 2, 2, 2]);
 
   assert.equal(isSessionComplete(partial), false);
   assert.equal(getSessionStage(partial), 'endedEarly');
   assert.equal(getCompletedRecoveryCount(partial), 2);
+  assert.deepEqual(getPainSeries(partial), [2, 2, 2, null, null, null]);
 
   assert.deepEqual(
     getClosedSessions(sessions).map((session) => session.id),
@@ -325,6 +342,105 @@ function verifyActivityLoadCalculation() {
   assert.equal(getActivityLoadLevel(70), 'high');
 }
 
+function verifyCircumferenceResponse() {
+  assert.equal(calculateBandStretchResponse(2_000, 2_100), 5);
+  assert.equal(calculateBandStretchResponse(2_000, 1_900), -5);
+  assert.equal(calculateBandStretchResponse(0, 2_100), null);
+  assert.equal(calculateBandStretchResponse(undefined, 2_100), null);
+
+  const complete = createDemoSessionFixtures()['demo-complete'];
+  const response = getCircumferenceResponse(complete, '0');
+  assert.equal(response.injuredSide, 'right');
+  assert.ok(response.leftPercent > 0);
+  assert.ok(response.rightPercent > 0);
+  assert.equal(
+    response.contralateralDifferencePercent,
+    response.rightPercent - response.leftPercent,
+  );
+  assert.equal(getCircumferenceResponseSeries(complete, 'left').length, 6);
+
+  const missingRightBaseline = {
+    ...complete,
+    baseline: { ...complete.baseline, right: null },
+  };
+  const incompleteResponse = getCircumferenceResponse(missingRightBaseline, '0');
+  assert.equal(incompleteResponse.rightPercent, null);
+  assert.equal(incompleteResponse.contralateralDifferencePercent, null);
+}
+
+function verifyTemperatureResponse() {
+  assert.equal(calculateTemperatureDelta(33.2, 34.1), 34.1 - 33.2);
+  assert.equal(calculateTemperatureDelta(34.1, 33.2), 33.2 - 34.1);
+  assert.equal(calculateTemperatureDelta(undefined, 34.1), null);
+
+  const complete = createDemoSessionFixtures()['demo-complete'];
+  const response = getTemperatureResponse(complete, '0');
+  assert.equal(response.injuredSide, 'right');
+  assert.ok(response.leftDeltaCelsius > 0);
+  assert.ok(response.rightDeltaCelsius > 0);
+  assert.equal(
+    response.currentAsymmetryCelsius,
+    complete.recovery['0'].right.temperatureCelsius -
+      complete.recovery['0'].left.temperatureCelsius,
+  );
+  assert.equal(
+    response.responseDifferenceCelsius,
+    response.rightDeltaCelsius - response.leftDeltaCelsius,
+  );
+  assert.equal(getTemperatureDeltaSeries(complete, 'right').length, 6);
+
+  const missingLeft = {
+    ...complete,
+    recovery: {
+      ...complete.recovery,
+      '0': { ...complete.recovery['0'], left: null },
+    },
+  };
+  const incompleteResponse = getTemperatureResponse(missingLeft, '0');
+  assert.equal(incompleteResponse.leftDeltaCelsius, null);
+  assert.equal(incompleteResponse.currentAsymmetryCelsius, null);
+  assert.equal(incompleteResponse.responseDifferenceCelsius, null);
+}
+
+function verifyRecoveryStatus() {
+  const sessions = createDemoSessionFixtures();
+  const complete = sessions['demo-complete'];
+  assert.equal(assessRecoveryCheckpoint(complete, '0').status, 'aboveBaselineRange');
+  assert.equal(assessRecoveryCheckpoint(complete, '30').status, 'aboveBaselineRange');
+  assert.deepEqual(getRecoveryTime(complete), {
+    status: 'recovered',
+    minutes: 45,
+    checkpoint: '45',
+  });
+
+  const partial = sessions['demo-ended-early'];
+  assert.equal(assessRecoveryCheckpoint(partial, '30').status, 'insufficientData');
+  assert.deepEqual(getRecoveryTime(partial), {
+    status: 'insufficientData',
+    minutes: null,
+    checkpoint: null,
+  });
+
+  const neverRecovered = {
+    ...complete,
+    recovery: Object.fromEntries(
+      Object.entries(complete.recovery).map(([checkpoint, record]) => [
+        checkpoint,
+        {
+          ...record,
+          left: { ...record.left, stretchValue: complete.baseline.left.stretchValue * 1.02 },
+          right: { ...record.right, stretchValue: complete.baseline.right.stretchValue * 1.02 },
+        },
+      ]),
+    ),
+  };
+  assert.deepEqual(getRecoveryTime(neverRecovered), {
+    status: 'notRecovered',
+    minutes: null,
+    checkpoint: null,
+  });
+}
+
 function verifySessionMutations() {
   const original = createDemoSessionFixtures()['demo-complete'];
   const previousRight = original.baseline.right;
@@ -346,6 +462,24 @@ function verifySessionMutations() {
   assert.equal(afterRemeasure.baseline.symptoms, previousSymptoms);
   assert.equal(afterRemeasure.baseline.symptomsRecordedAt, previousSymptomsRecordedAt);
 
+  const recoveryReplacement = {
+    ...original.recovery['15'].left,
+    id: 'replacement-recovery-left',
+    stretchValue: 2_499,
+  };
+  const afterRecoveryRemeasure = saveMeasurementToSession(
+    original,
+    recoveryReplacement,
+    '2026-09-28T01:02:00.000Z',
+  );
+  assert.equal(afterRecoveryRemeasure.recovery['15'].left.id, 'replacement-recovery-left');
+  assert.equal(afterRecoveryRemeasure.recovery['15'].right, original.recovery['15'].right);
+  assert.equal(afterRecoveryRemeasure.recovery['15'].symptoms, original.recovery['15'].symptoms);
+  assert.equal(
+    afterRecoveryRemeasure.recovery['15'].symptomsRecordedAt,
+    original.recovery['15'].symptomsRecordedAt,
+  );
+
   const changedSymptoms = { pain: 5, stiffness: 4, swelling: 'moderate' };
   const afterCheckIn = saveSymptomsToSession(
     original,
@@ -364,6 +498,64 @@ function verifySessionMutations() {
       sessionId: 'another-session',
     }),
   );
+}
+
+function verifyDay7RecoveryBoundaries() {
+  const complete = createDemoSessionFixtures()['demo-complete'];
+
+  const missingFeelings = {
+    ...complete,
+    recovery: {
+      ...complete.recovery,
+      '45': { ...complete.recovery['45'], symptomsRecordedAt: null },
+    },
+  };
+  assert.equal(getCheckpointStatus(missingFeelings.recovery['45']), 'needsCheckIn');
+  assert.equal(assessRecoveryCheckpoint(missingFeelings, '45').status, 'insufficientData');
+  assert.equal(getPainSeries(missingFeelings)[4], null);
+
+  const skippedEarlierCheckpoint = {
+    ...complete,
+    recovery: {
+      ...complete.recovery,
+      '15': {
+        ...complete.recovery['15'],
+        left: null,
+        right: null,
+        symptomsRecordedAt: null,
+      },
+    },
+  };
+  assert.deepEqual(getRecoveryTime(skippedEarlierCheckpoint), {
+    status: 'insufficientData',
+    minutes: null,
+    checkpoint: null,
+  });
+
+  const negativeResponse = {
+    ...complete,
+    recovery: {
+      ...complete.recovery,
+      '0': {
+        ...complete.recovery['0'],
+        left: {
+          ...complete.recovery['0'].left,
+          stretchValue: complete.baseline.left.stretchValue * 0.99,
+          temperatureCelsius: complete.baseline.left.temperatureCelsius - 0.4,
+        },
+      },
+    },
+  };
+  assert.ok(getCircumferenceResponse(negativeResponse, '0').leftPercent < 0);
+  assert.ok(getTemperatureResponse(negativeResponse, '0').leftDeltaCelsius < 0);
+
+  const persistedState = {
+    currentSessionId: complete.id,
+    sessions: { [complete.id]: complete },
+  };
+  const restored = decodeSessionState(encodeSessionState(persistedState));
+  assert.deepEqual(getRecoveryTime(restored.sessions[complete.id]), getRecoveryTime(complete));
+  assert.deepEqual(getRecoveryTime(complete), getRecoveryTime(complete));
 }
 
 function verifyActivityTransitions() {
@@ -408,11 +600,15 @@ async function main() {
   verifyV1MigrationAndV2RoundTrip();
   verifyMeasurementTiming();
   verifySessionMutations();
+  verifyDay7RecoveryBoundaries();
   verifyActivityTransitions();
   await verifyMockMeasurementSource();
   await verifyMockActivitySource();
   verifyActivitySignalProcessing();
   verifyActivityLoadCalculation();
+  verifyCircumferenceResponse();
+  verifyTemperatureResponse();
+  verifyRecoveryStatus();
   console.log('Session domain verification passed.');
 }
 

@@ -23,6 +23,10 @@ import {
   isBaselineComplete,
   isSessionComplete,
 } from '@/domain/session-selectors';
+import {
+  assessRecoveryCheckpoint,
+  getRecoveryRangeLabel,
+} from '@/domain/recovery-status';
 import { useSessionStore } from '@/state/session-store';
 import { formatTemperature } from '@/utils/format';
 
@@ -285,13 +289,14 @@ export default function SessionOverviewScreen() {
           const checkpointStatus = getCheckpointStatus(record);
           const complete = checkpointStatus === 'complete';
           const partiallyComplete = checkpointStatus === 'partial';
+          const recoveryAssessment = assessRecoveryCheckpoint(session, checkpoint);
           const label = checkpoint === '0' ? 'Post activity' : `${checkpoint} min`;
           const status = complete
-            ? 'Complete'
+            ? getRecoveryRangeLabel(recoveryAssessment.status)
             : checkpointStatus === 'needsCheckIn'
               ? 'Check-in needed'
               : partiallyComplete
-              ? '1 of 2 knees complete'
+              ? `${record.left ? 'Left' : 'Right'} knee complete`
               : activityComplete
                 ? 'Pending'
                 : 'Locked';
@@ -303,7 +308,11 @@ export default function SessionOverviewScreen() {
               status={status}
               tone={
                 complete
-                  ? 'complete'
+                  ? recoveryAssessment.status === 'withinBaselineRange'
+                    ? 'complete'
+                    : recoveryAssessment.status === 'aboveBaselineRange'
+                      ? 'warning'
+                      : 'info'
                   : checkpointStatus === 'needsCheckIn'
                     ? 'active'
                     : partiallyComplete
