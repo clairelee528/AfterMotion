@@ -58,6 +58,7 @@ export default function RootLayout() {
           name="session/[sessionId]/summary"
           options={{ title: 'Session summary' }}
         />
+        <Stack.Screen name="history/compare" options={{ title: 'Compare sessions' }} />
         <Stack.Screen
           name="measurement-position"
           options={{ presentation: 'modal', title: 'Band position' }}

@@ -3,6 +3,7 @@ import { View } from 'react-native';
 
 import { RecoveryLineChart } from '@/components/recovery-line-chart';
 import {
+  ActivityBadge,
   Button,
   Card,
   Label,
@@ -16,6 +17,7 @@ import {
   Value,
   wireframeStyles,
 } from '@/components/ui';
+import { recoveryCheckpoints } from '@/domain/models';
 import {
   getCompletedRecoveryCount,
   getLastCompletedRecoveryMinutes,
@@ -29,7 +31,12 @@ import {
   getTemperatureDeltaSeries,
   getTemperatureResponse,
 } from '@/domain/recovery-metrics';
-import { getRecoveryTime } from '@/domain/recovery-status';
+import {
+  assessRecoveryCheckpoint,
+  getRecoveryRangeLabel,
+  getRecoveryTime,
+  getRecoveryTimeLabel,
+} from '@/domain/recovery-status';
 import { useSessionStore } from '@/state/session-store';
 import {
   formatDuration,
@@ -85,29 +92,30 @@ export default function SessionSummaryScreen() {
   const circumferenceResponse = getCircumferenceResponse(session, '0');
   const temperatureResponse = getTemperatureResponse(session, '0');
   const recoveryTime = getRecoveryTime(session);
-  const recoveryTimeLabel =
-    recoveryTime.status === 'recovered'
+  const recoveryTimeLabel = getRecoveryTimeLabel(recoveryTime);
+  const summaryHighlight = endedEarly
+    ? 'ENDED EARLY'
+    : recoveryTime.status === 'recovered'
       ? recoveryTime.minutes === 0
-        ? 'Post activity'
-        : `${recoveryTime.minutes} min`
+        ? 'WITHIN RANGE POST ACTIVITY'
+        : `WITHIN RANGE · ${recoveryTime.minutes} MIN`
       : recoveryTime.status === 'notRecovered'
-        ? '> 60 min'
-        : 'Insufficient data';
+        ? 'ABOVE RANGE AT 60 MIN'
+        : trackedMinutes === null
+          ? 'ACTIVITY RECORDED'
+          : `${trackedMinutes} MIN TRACKED`;
+  const postFeelingsRecorded = Boolean(postActivity?.symptomsRecordedAt);
 
   return (
     <Page>
       <PageHeading
         eyebrow="Session summary"
-        title={endedEarly ? 'Session ended with partial data' : 'Review your knee response'}
-        highlight={
-          endedEarly
-            ? 'ENDED EARLY'
-            : trackedMinutes === null
-              ? 'ACTIVITY RECORDED'
-              : `${trackedMinutes} MIN TRACKED`
-        }
+        title={endedEarly ? 'Session ended with partial data' : `${activity} session`}
+        highlight={summaryHighlight}
         description={`${activity} · Saved on this device`}
       />
+      <ActivityBadge activity={session.activityType} label={activity} />
+
       <Card variant="data">
         <StatusTag label={endedEarly ? 'Partial record' : 'Session complete'} tone={endedEarly ? 'warning' : 'complete'} />
         <Label inverse>Activity Load Index</Label>
@@ -116,23 +124,34 @@ export default function SessionSummaryScreen() {
         </Value>
         <View style={wireframeStyles.choiceGrid}>
           <MetricTile label="Duration" value={duration} highlighted />
-          <MetricTile label="Recovery checks" value={String(completeChecks)} unit="/ 5" />
+          <MetricTile
+            label="Movement intensity"
+            value={metrics ? String(metrics.movementIntensity) : '—'}
+            unit="/ 10"
+          />
         </View>
+        <Row
+          label="Acceleration peaks"
+          value={metrics ? String(metrics.accelerationPeakCount) : '—'}
+          icon="trending-up-outline"
+          inverse
+        />
         <Row
           label="Sharp decelerations"
           value={metrics ? String(metrics.decelerationEventCount) : '—'}
           icon="trending-down-outline"
           inverse
         />
+        <Row
+          label="Impact-like events"
+          value={metrics ? String(metrics.impactLikeEventCount) : '—'}
+          icon="flash-outline"
+          inverse
+        />
       </Card>
 
       <Card>
-        <SectionTitle>How each knee responded</SectionTitle>
-        <Row
-          label="Recovery time"
-          value={recoveryTimeLabel}
-          icon="time-outline"
-        />
+        <SectionTitle>Immediate response</SectionTitle>
         <View style={wireframeStyles.choiceGrid}>
           <MetricTile
             label="Right stretch response"
@@ -189,13 +208,64 @@ export default function SessionSummaryScreen() {
         />
         <Row
           label="Reported pain"
-          value={formatScore(postActivity?.symptoms.pain ?? session.baseline.symptoms.pain)}
+          value={postFeelingsRecorded ? formatScore(postActivity.symptoms.pain) : '—'}
           icon="fitness-outline"
+        />
+        <Row
+          label="Reported stiffness"
+          value={postFeelingsRecorded ? formatScore(postActivity.symptoms.stiffness) : '—'}
+          icon="body-outline"
+        />
+        <Row
+          label="Reported swelling"
+          value={postFeelingsRecorded ? postActivity.symptoms.swelling : '—'}
+          icon="water-outline"
         />
       </Card>
 
       <Card>
-        <SectionTitle>Band stretch response</SectionTitle>
+        <StatusTag
+          label={
+            recoveryTime.status === 'recovered'
+              ? 'Recovery point found'
+              : recoveryTime.status === 'notRecovered'
+                ? 'Above range at 60 min'
+                : 'Partial recovery data'
+          }
+          tone={
+            recoveryTime.status === 'recovered'
+              ? 'complete'
+              : recoveryTime.status === 'notRecovered'
+                ? 'warning'
+                : 'info'
+          }
+        />
+        <SectionTitle>Recovery overview</SectionTitle>
+        <View style={wireframeStyles.choiceGrid}>
+          <MetricTile label="Recovery time" value={recoveryTimeLabel} highlighted />
+          <MetricTile label="Checks completed" value={String(completeChecks)} unit="/ 5" />
+        </View>
+        {recoveryCheckpoints.map((checkpoint) => {
+          const assessment = assessRecoveryCheckpoint(session, checkpoint);
+          return (
+            <Row
+              key={checkpoint}
+              label={checkpoint === '0' ? 'Post activity' : `${checkpoint} min`}
+              value={getRecoveryRangeLabel(assessment.status)}
+              icon={
+                assessment.status === 'withinBaselineRange'
+                  ? 'checkmark-circle-outline'
+                  : assessment.status === 'aboveBaselineRange'
+                    ? 'alert-circle-outline'
+                    : 'remove-circle-outline'
+              }
+            />
+          );
+        })}
+      </Card>
+
+      <Card>
+        <SectionTitle>Recovery detail · Band stretch</SectionTitle>
         <RecoveryLineChart
           labels={chartLabels}
           series={[
@@ -212,7 +282,7 @@ export default function SessionSummaryScreen() {
       </Card>
 
       <Card>
-        <SectionTitle>Temperature response</SectionTitle>
+        <SectionTitle>Recovery detail · Temperature</SectionTitle>
         <RecoveryLineChart
           labels={chartLabels}
           series={[
@@ -224,7 +294,7 @@ export default function SessionSummaryScreen() {
       </Card>
 
       <Card>
-        <SectionTitle>Pain and stiffness</SectionTitle>
+        <SectionTitle>Recovery detail · Pain and stiffness</SectionTitle>
         <RecoveryLineChart
           labels={chartLabels}
           series={[
@@ -236,7 +306,7 @@ export default function SessionSummaryScreen() {
       </Card>
 
       <Card>
-        <SectionTitle>Reported swelling</SectionTitle>
+        <SectionTitle>Recovery detail · Reported swelling</SectionTitle>
         <RecoveryLineChart
           labels={chartLabels}
           series={[{ label: 'Swelling', color: '#087885', values: swellingValues }]}

@@ -134,3 +134,11 @@ export function getRecoveryRangeLabel(status: RecoveryRangeStatus): string {
   if (status === 'aboveBaselineRange') return 'Above baseline range';
   return 'Insufficient data';
 }
+
+export function getRecoveryTimeLabel(result: RecoveryTimeResult): string {
+  if (result.status === 'recovered') {
+    return result.minutes === 0 ? 'Post activity' : `${result.minutes} min`;
+  }
+  if (result.status === 'notRecovered') return '> 60 min';
+  return 'Insufficient data';
+}

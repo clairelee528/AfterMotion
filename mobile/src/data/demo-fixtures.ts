@@ -98,11 +98,14 @@ function recoveryRecords(
 export function createDemoSessionFixtures(): Record<string, Session> {
   const activeId = 'demo-active';
   const completeId = 'demo-complete';
+  const previousId = 'demo-complete-previous';
   const partialId = 'demo-ended-early';
   const activeCreatedAt = '2026-09-27T01:00:00.000Z';
   const completeCreatedAt = '2026-09-25T01:00:00.000Z';
+  const previousCreatedAt = '2026-09-21T01:00:00.000Z';
   const partialCreatedAt = '2026-09-23T01:00:00.000Z';
   const completeMetrics = getDemoActivityMetrics(68 * 60);
+  const previousMetrics = getDemoActivityMetrics(54 * 60);
   const partialMetrics = getDemoActivityMetrics(32 * 60);
 
   return {
@@ -147,6 +150,27 @@ export function createDemoSessionFixtures(): Record<string, Session> {
         metrics: completeMetrics,
       },
       recovery: recoveryRecords(completeId, '2026-09-25T02:30:00.000Z', 4),
+    },
+    [previousId]: {
+      id: previousId,
+      activityType: 'frisbee',
+      injuredSide: 'right',
+      measurementSource: 'mock',
+      status: 'complete',
+      createdAt: previousCreatedAt,
+      updatedAt: '2026-09-21T02:54:00.000Z',
+      closedAt: '2026-09-21T02:54:00.000Z',
+      endedEarly: false,
+      baseline: checkpoint(previousId, 'baseline', previousCreatedAt),
+      activity: {
+        status: 'complete',
+        elapsedSeconds: previousMetrics.durationSeconds,
+        sampleCount: previousMetrics.sampleCount,
+        startedAt: '2026-09-21T01:20:00.000Z',
+        endedAt: '2026-09-21T02:14:00.000Z',
+        metrics: previousMetrics,
+      },
+      recovery: recoveryRecords(previousId, '2026-09-21T02:15:00.000Z', 4),
     },
     [partialId]: {
       id: partialId,

@@ -58,7 +58,7 @@ export default function SettingsScreen() {
       </Card>
       <Card>
         <SectionTitle>About</SectionTitle>
-        <Row label="Prototype" value="Day 4" icon="construct-outline" />
+        <Row label="Prototype" value="Day 8" icon="construct-outline" />
         <Row label="Medical status" value="Not a diagnostic device" icon="information-circle-outline" />
       </Card>
     </Page>

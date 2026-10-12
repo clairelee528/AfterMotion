@@ -63,7 +63,17 @@ const {
 const {
   assessRecoveryCheckpoint,
   getRecoveryTime,
+  getRecoveryTimeLabel,
 } = require('../.verification-build/domain/recovery-status.js');
+const {
+  selectHistorySessions,
+} = require('../.verification-build/domain/history-selectors.js');
+const {
+  createSessionComparison,
+} = require('../.verification-build/domain/session-comparison.js');
+const {
+  getComparisonInsights,
+} = require('../.verification-build/domain/comparison-insights.js');
 
 function verifyFixturesAndSelectors() {
   const sessions = createDemoSessionFixtures();
@@ -71,7 +81,7 @@ function verifyFixturesAndSelectors() {
   const complete = sessions['demo-complete'];
   const partial = sessions['demo-ended-early'];
 
-  assert.equal(Object.keys(sessions).length, 3);
+  assert.equal(Object.keys(sessions).length, 4);
   assert.equal(getSessionStage(active), 'activityPaused');
   assert.equal(getRecommendedAction(active), 'resumeActivity');
   assert.equal(getCheckpointStatus(active.recovery['0']), 'pending');
@@ -97,13 +107,142 @@ function verifyFixturesAndSelectors() {
 
   assert.deepEqual(
     getClosedSessions(sessions).map((session) => session.id),
-    ['demo-complete', 'demo-ended-early'],
+    ['demo-complete', 'demo-ended-early', 'demo-complete-previous'],
   );
   assert.equal(getLatestClosedSession(sessions).id, 'demo-complete');
 
   const metrics = getDemoActivityMetrics(120);
   assert.equal(metrics.durationSeconds, 120);
   assert.equal(metrics.sampleCount, 120 * DEMO_SAMPLE_RATE_HZ);
+}
+
+function verifyHistoryFilters() {
+  const sessions = Object.values(createDemoSessionFixtures()).filter(
+    (session) => session.closedAt !== null,
+  );
+  const originalOrder = sessions.map((session) => session.id);
+  assert.deepEqual(
+    selectHistorySessions(sessions, {
+      activity: 'all',
+      status: 'all',
+      sortOrder: 'latest',
+    }).map((session) => session.id),
+    ['demo-complete', 'demo-ended-early', 'demo-complete-previous'],
+  );
+  assert.deepEqual(
+    selectHistorySessions(sessions, {
+      activity: 'all',
+      status: 'all',
+      sortOrder: 'earliest',
+    }).map((session) => session.id),
+    ['demo-complete-previous', 'demo-ended-early', 'demo-complete'],
+  );
+  assert.deepEqual(
+    selectHistorySessions(sessions, {
+      activity: 'frisbee',
+      status: 'complete',
+      sortOrder: 'latest',
+    }).map((session) => session.id),
+    ['demo-complete', 'demo-complete-previous'],
+  );
+  assert.deepEqual(
+    selectHistorySessions(sessions, {
+      activity: 'running',
+      status: 'endedEarly',
+      sortOrder: 'latest',
+    }).map((session) => session.id),
+    ['demo-ended-early'],
+  );
+  assert.equal(
+    selectHistorySessions(sessions, {
+      activity: 'tennis',
+      status: 'all',
+      sortOrder: 'latest',
+    }).length,
+    0,
+  );
+  assert.deepEqual(
+    sessions.map((session) => session.id),
+    originalOrder,
+    'Filtering and sorting history must not mutate the stored session order.',
+  );
+}
+
+function verifySessionComparison() {
+  const fixtures = createDemoSessionFixtures();
+  const earlier = fixtures['demo-complete'];
+  const latest = {
+    ...earlier,
+    id: 'demo-complete-latest',
+    createdAt: '2026-09-28T01:00:00.000Z',
+    closedAt: '2026-09-28T03:08:00.000Z',
+    activity: {
+      ...earlier.activity,
+      elapsedSeconds: earlier.activity.elapsedSeconds + 600,
+      metrics: {
+        ...earlier.activity.metrics,
+        loadIndex: earlier.activity.metrics.loadIndex + 5,
+      },
+    },
+  };
+  const comparison = createSessionComparison(latest, earlier);
+  assert.equal(comparison.earlier.id, earlier.id);
+  assert.equal(comparison.latest.id, latest.id);
+  assert.equal(comparison.metrics.length, 9);
+  assert.deepEqual(
+    comparison.metrics.find((metric) => metric.key === 'activityLoad'),
+    {
+      key: 'activityLoad',
+      label: 'Activity Load Index',
+      earlier: earlier.activity.metrics.loadIndex,
+      latest: latest.activity.metrics.loadIndex,
+      change: 5,
+    },
+  );
+  assert.equal(
+    comparison.metrics.find((metric) => metric.key === 'duration').change,
+    600,
+  );
+  const insights = getComparisonInsights(comparison);
+  assert.equal(insights.length, 5);
+  assert.equal(insights[0].id, 'activity-load');
+  assert.equal(insights[0].title, 'Activity load was higher');
+  assert.equal(insights[1].title, 'Recovery time was the same');
+  assert.equal(insights.at(-1).title, 'Both recovery records are complete');
+
+  const incomplete = {
+    ...latest,
+    id: 'demo-complete-incomplete',
+    createdAt: '2026-09-29T01:00:00.000Z',
+    closedAt: '2026-09-29T02:00:00.000Z',
+    endedEarly: true,
+    activity: { ...latest.activity, metrics: null },
+    recovery: {
+      ...latest.recovery,
+      '0': {
+        left: null,
+        right: null,
+        symptoms: { pain: 0, stiffness: 0, swelling: 'normal' },
+        symptomsRecordedAt: null,
+      },
+    },
+  };
+  const incompleteInsights = getComparisonInsights(
+    createSessionComparison(earlier, incomplete),
+  );
+  assert.equal(incompleteInsights.length, 5);
+  assert.equal(incompleteInsights[0].title, 'Activity load is not comparable');
+  assert.equal(
+    incompleteInsights[1].title,
+    'Recovery time is not directly comparable',
+  );
+  assert.equal(
+    incompleteInsights.at(-1).title,
+    'Comparison includes incomplete recovery data',
+  );
+  assert.ok(incompleteInsights.every((insight) => insight.tone === 'warning'));
+  assert.throws(() => createSessionComparison(earlier, fixtures['demo-ended-early']));
+  assert.throws(() => createSessionComparison(earlier, earlier));
 }
 
 function verifyV1MigrationAndV2RoundTrip() {
@@ -412,6 +551,7 @@ function verifyRecoveryStatus() {
     minutes: 45,
     checkpoint: '45',
   });
+  assert.equal(getRecoveryTimeLabel(getRecoveryTime(complete)), '45 min');
 
   const partial = sessions['demo-ended-early'];
   assert.equal(assessRecoveryCheckpoint(partial, '30').status, 'insufficientData');
@@ -420,6 +560,7 @@ function verifyRecoveryStatus() {
     minutes: null,
     checkpoint: null,
   });
+  assert.equal(getRecoveryTimeLabel(getRecoveryTime(partial)), 'Insufficient data');
 
   const neverRecovered = {
     ...complete,
@@ -439,6 +580,7 @@ function verifyRecoveryStatus() {
     minutes: null,
     checkpoint: null,
   });
+  assert.equal(getRecoveryTimeLabel(getRecoveryTime(neverRecovered)), '> 60 min');
 }
 
 function verifySessionMutations() {
@@ -597,6 +739,8 @@ function verifyActivityTransitions() {
 
 async function main() {
   verifyFixturesAndSelectors();
+  verifyHistoryFilters();
+  verifySessionComparison();
   verifyV1MigrationAndV2RoundTrip();
   verifyMeasurementTiming();
   verifySessionMutations();
