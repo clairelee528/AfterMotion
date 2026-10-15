@@ -46,6 +46,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Training',
+          headerShown: false,
           tabBarIcon: ({ focused }) => (
             <TabIcon focused={focused} active="barbell" inactive="barbell-outline" />
           ),
