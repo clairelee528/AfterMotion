@@ -32,6 +32,7 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "verify:domain": "tsc -p tsconfig.verify.json && node scripts/verify-session-domain.cjs",
+    "verify:day9": "npm run verify:domain && npm run typecheck && npm run lint && npx expo-doctor && expo export --platform ios",
     "doctor": "expo-doctor",
     "lint": "expo lint"
   },
