@@ -1,53 +1,56 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import {
-  ActivityBadge,
-  Button,
-  Card,
-  Notice,
-  Page,
-  PageHeading,
-  Row,
-  SectionTitle,
-  StageCard,
-  TimelineItem,
-} from '@/components/ui';
-import { recoveryCheckpoints, type KneeSide } from '@/domain/models';
-import {
-  areAllRecoveryCheckpointsComplete,
-  getCheckpointStatus,
-  getNextMissingSide,
-  getRecommendedAction,
-  isActivityInProgress,
-  isBaselineComplete,
-  isSessionComplete,
-} from '@/domain/session-selectors';
-import {
-  assessRecoveryCheckpoint,
-  getRecoveryRangeLabel,
-} from '@/domain/recovery-status';
+import { AppIcon } from '@/components/icons';
+import { Button, Card, Notice, Page, PageHeading, SectionTitle } from '@/components/ui';
+import { recoveryCheckpoints, type CheckpointRecord } from '@/domain/models';
+import { getCheckpointStatus, getNextMissingSide, getSessionStage, isActivityInProgress, isBaselineComplete, isSessionComplete, areAllRecoveryCheckpointsComplete } from '@/domain/session-selectors';
 import { useSessionStore } from '@/state/session-store';
-import { formatTemperature } from '@/utils/format';
 
-const activityNames: Record<string, string> = {
-  badminton: 'Badminton',
-  frisbee: 'Frisbee',
-  gym: 'Gym',
-  other: 'Other',
-  running: 'Running',
-  tennis: 'Tennis',
-};
+const teal = '#064653';
+const lime = '#E4FF38';
+type State = 'complete' | 'current' | 'pending';
+const activityNames: Record<string, string> = { badminton: 'Badminton', frisbee: 'Frisbee', gym: 'Gym', other: 'Other', running: 'Running', tennis: 'Tennis' };
 
-const recommendedActionLabels = {
-  completeBaseline: 'Complete your pre-activity baseline',
-  startActivity: 'Start your activity',
-  resumeActivity: 'Return to your activity recording',
-  completePostActivity: 'Complete the post-activity check',
-  continueRecovery: 'Continue recovery checks',
-  completeSession: 'Complete this session',
-  viewSummary: 'View your session summary',
-} as const;
+function Marker({ state, small = false }: { state: State; small?: boolean }) {
+  return <View style={[styles.marker, small && styles.smallMarker, state === 'complete' && styles.completeMarker, state === 'current' && styles.currentMarker]}>
+    {state === 'complete' ? <AppIcon name="checkmark" size={small ? 11 : 14} color="#FFFFFF" /> : state === 'current' ? <View style={styles.dot} /> : null}
+  </View>;
+}
+
+function Stage({ title, state, last, children }: { title: string; state: State; last?: boolean; children: ReactNode }) {
+  return <View style={styles.stage}>
+    <View style={styles.rail}>
+      <Marker state={state} small />
+      {!last ? <View style={[styles.line, state === 'complete' && styles.completeLine]} /> : null}
+    </View>
+    <View style={styles.stageBody}>
+      <Text style={styles.stageTitle}>{title}</Text>
+      {children}
+    </View>
+  </View>;
+}
+
+function CheckRow({ title, status, state, disabled, onPress, detail }: { title: string; status: string; state: State; disabled?: boolean; onPress: () => void; detail?: string }) {
+  const current = state === 'current';
+  return <Pressable accessibilityRole="button" accessibilityLabel={`${title}. ${status}${detail ? `. ${detail}` : ''}`} accessibilityState={{ disabled: !!disabled }} disabled={disabled} onPress={onPress}
+    style={({ pressed }) => [styles.checkRow, current && styles.currentRow, pressed && styles.pressed]}>
+    <Marker state={state} />
+    <View style={styles.rowText}>
+      <Text style={[styles.rowTitle, current && styles.white]}>{title}</Text>
+      <Text style={[styles.status, current && styles.lime]}>{status}</Text>
+      {detail ? <Text style={[styles.detail, current && styles.light]}>{detail}</Text> : null}
+    </View>
+    <AppIcon name={disabled ? 'lock-closed-outline' : 'chevron-forward'} size={17} color={current ? '#FFFFFF' : '#6E9298'} />
+  </Pressable>;
+}
+
+function progressDetail(record: CheckpointRecord | undefined) {
+  if (getCheckpointStatus(record) === 'needsCheckIn') return 'Both knees recorded · Add your feelings';
+  if (record?.left || record?.right) return `Left: ${record.left ? 'done' : 'next'} · Right: ${record.right ? 'done' : 'next'}`;
+  return 'Measure left knee, then right knee';
+}
 
 export default function SessionOverviewScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
@@ -55,303 +58,118 @@ export default function SessionOverviewScreen() {
   const [confirmEnd, setConfirmEnd] = useState(false);
   const session = sessions[sessionId];
 
-  if (!session) {
-    return (
-      <Page>
-        <PageHeading
-          eyebrow="Session overview"
-          title={hydrated ? 'Session not found' : 'Restoring session'}
-          description={
-            hydrated
-              ? 'This session is no longer stored on this device.'
-              : 'Loading your locally saved progress.'
-          }
-        />
-        {hydrated ? <Button label="Return to Training" onPress={() => router.dismissTo('/')} /> : null}
-      </Page>
-    );
-  }
+  if (!session) return <Page><PageHeading title={hydrated ? 'Session not found' : 'Restoring session'} /><Button label="Return to Training" onPress={() => router.dismissTo('/')} /></Page>;
 
+  const stage = getSessionStage(session);
+  const closed = stage === 'complete' || stage === 'endedEarly';
   const baselineComplete = isBaselineComplete(session);
-  const activityInProgress = isActivityInProgress(session);
   const activityComplete = session.activity.status === 'complete';
-  const allRecoveryComplete = areAllRecoveryCheckpointsComplete(session);
-  const sessionComplete = isSessionComplete(session);
+  const activityInProgress = isActivityInProgress(session);
+  const recoveryComplete = areAllRecoveryCheckpointsComplete(session);
+  const complete = isSessionComplete(session);
+  const nextCheckpoint = recoveryCheckpoints.find((key) => getCheckpointStatus(session.recovery[key]) !== 'complete');
+  const baselineState: State = baselineComplete ? 'complete' : !closed ? 'current' : 'pending';
+  const activityState: State = activityComplete ? 'complete' : baselineComplete && !closed ? 'current' : 'pending';
+  const recoveryState: State = recoveryComplete ? 'complete' : activityComplete && !closed ? 'current' : 'pending';
 
-  function openMeasurement(phase: 'baseline' | 'recovery', side: KneeSide, checkpoint: string) {
-    router.push({
-      pathname: '/session/[sessionId]/measurement',
-      params: { sessionId, phase, side, checkpoint },
-    });
-  }
-
-  function editFeelings(checkpoint: string) {
-    router.push({
-      pathname: '/session/[sessionId]/feelings',
-      params: { sessionId, checkpoint },
-    });
-  }
-
-  function openCheckpoint(checkpoint: string) {
-    const record = session.recovery[checkpoint];
-    const checkpointStatus = getCheckpointStatus(record);
-    if (checkpointStatus === 'complete') {
-      router.push({
-        pathname: '/session/[sessionId]/checkpoint',
-        params: { sessionId, checkpoint },
-      });
-      return;
+  function openCheck(checkpoint: string) {
+    const record = checkpoint === 'baseline' ? session.baseline : session.recovery[checkpoint];
+    const status = getCheckpointStatus(record);
+    if (status === 'complete') {
+      router.push({ pathname: '/session/[sessionId]/checkpoint', params: { sessionId, checkpoint } });
+    } else if (status === 'needsCheckIn') {
+      router.push({ pathname: '/session/[sessionId]/feelings', params: { sessionId, checkpoint, returnTo: 'checkpoint' } });
+    } else {
+      router.push({ pathname: '/session/[sessionId]/measurement', params: { sessionId, checkpoint, phase: checkpoint === 'baseline' ? 'baseline' : 'recovery', side: getNextMissingSide(record) ?? 'left' } });
     }
-    if (checkpointStatus === 'needsCheckIn') {
-      router.push({
-        pathname: '/session/[sessionId]/feelings',
-        params: { sessionId, checkpoint, returnTo: 'checkpoint' },
-      });
-      return;
-    }
-    openMeasurement('recovery', getNextMissingSide(record) ?? 'left', checkpoint);
   }
 
-  const elapsedMinutes = Math.floor(session.activity.elapsedSeconds / 60);
-  const nextAction = recommendedActionLabels[getRecommendedAction(session)];
-  const baselineStatus = getCheckpointStatus(session.baseline);
+  function openActivity() {
+    router.push({ pathname: activityComplete ? '/session/[sessionId]/activity-summary' : activityInProgress ? '/session/[sessionId]/activity' : '/session/[sessionId]/sleeve-setup', params: { sessionId } });
+  }
 
-  return (
-    <Page>
-      <PageHeading
-        eyebrow="Current session"
-        title={`${activityNames[session.activityType]} · Today`}
-        highlight={activityInProgress ? 'ACTIVITY LIVE' : undefined}
-        description="Choose the stage you need. You can leave the app and continue here later."
-      />
-      <ActivityBadge activity={session.activityType} label={activityNames[session.activityType]} />
+  const primaryLabel = closed ? 'View session summary' : !baselineComplete ? 'Continue baseline' : !activityComplete ? activityInProgress ? 'Return to activity' : 'Set up activity' : nextCheckpoint ? nextCheckpoint === '0' ? 'Continue post-activity check' : `Continue ${nextCheckpoint} min check` : 'Complete session';
+  function continueSession() {
+    if (closed) router.push({ pathname: '/session/[sessionId]/summary', params: { sessionId } });
+    else if (!baselineComplete) openCheck('baseline');
+    else if (!activityComplete) openActivity();
+    else if (nextCheckpoint) openCheck(nextCheckpoint);
+    else setConfirmEnd(true);
+  }
 
-      <Notice title="Next recommended action" body={nextAction} tone="info" />
+  const created = new Date(session.createdAt);
+  const dateLabel = created.toDateString() === new Date().toDateString() ? 'Today' : created.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
-      <StageCard
-        number={1}
-        title="Before activity"
-        status={
-          baselineComplete
-            ? 'Complete'
-            : baselineStatus === 'needsCheckIn'
-              ? 'Check-in needed'
-              : 'Needs measurements'
-        }
-        tone={baselineComplete ? 'complete' : 'active'}>
-        <Row
-          label="Status"
-          value={
-            baselineComplete
-              ? 'Complete'
-              : baselineStatus === 'needsCheckIn'
-                ? 'Check-in needed'
-                : 'Needs measurements'
-          }
-          icon={baselineComplete ? 'checkmark-circle-outline' : 'ellipse-outline'}
-        />
-        {session.baseline.left ? (
-          <Row
-            label="Left knee"
-            value={`${formatTemperature(session.baseline.left.temperatureCelsius)} · Recorded`}
-            icon="arrow-back-circle-outline"
-          />
-        ) : (
-          <Button
-            label="Measure left knee"
-            icon="scan-outline"
-            onPress={() => openMeasurement('baseline', 'left', 'baseline')}
-            variant="secondary"
-          />
-        )}
-        {session.baseline.right ? (
-          <Row
-            label="Right knee"
-            value={`${formatTemperature(session.baseline.right.temperatureCelsius)} · Recorded`}
-            icon="arrow-forward-circle-outline"
-          />
-        ) : session.baseline.left ? (
-          <Button
-            label="Measure right knee"
-            icon="scan-outline"
-            onPress={() => openMeasurement('baseline', 'right', 'baseline')}
-            variant="secondary"
-          />
-        ) : (
-          <Row
-            label="Right knee"
-            value="Available after left knee"
-            icon="lock-closed-outline"
-          />
-        )}
-        {session.baseline.left || session.baseline.right ? (
-          <Button
-            label={
-              session.baseline.symptomsRecordedAt
-                ? 'Edit pre-activity feelings'
-                : 'Record pre-activity feelings'
-            }
-            icon="create-outline"
-            onPress={() => editFeelings('baseline')}
-            variant="secondary"
-          />
-        ) : null}
-        {baselineComplete ? (
-          <Button
-            label="View baseline results"
-            icon="analytics-outline"
-            onPress={() =>
-              router.push({
-                pathname: '/session/[sessionId]/checkpoint',
-                params: { sessionId, checkpoint: 'baseline' },
-              })
-            }
-            variant="secondary"
-          />
-        ) : null}
-      </StageCard>
+  return <Page>
+    <View style={styles.container}>
+      <View style={styles.heading}>
+        <Text style={styles.eyebrow}>{closed ? 'SESSION RECORD' : 'YOUR SESSION'}</Text>
+        <Text style={styles.title}>{activityNames[session.activityType]} <Text style={styles.date}>· {dateLabel}</Text></Text>
+        <Text style={styles.subtitle}>{closed ? stage === 'endedEarly' ? 'Ended early · Your saved checks are kept.' : 'Session complete · Explore your results.' : 'Your activity and recovery, step by step.'}</Text>
+      </View>
 
-      <StageCard
-        number={2}
-        title="Activity"
-        status={
-          activityComplete
-            ? 'Complete'
-            : session.activity.status === 'paused'
-              ? 'Paused'
-              : activityInProgress
-                ? 'In progress'
-                : 'Not started'
-        }
-        tone={activityComplete ? 'complete' : activityInProgress ? 'active' : 'pending'}>
-        <Row
-          label="Status"
-          icon="pulse-outline"
-          value={
-            activityComplete
-              ? `Complete · ${elapsedMinutes} min`
-              : session.activity.status === 'paused'
-                ? `Paused · ${elapsedMinutes} min`
-                : activityInProgress
-                  ? `In progress · ${elapsedMinutes} min`
-                  : 'Not started'
-          }
-        />
-        {activityComplete ? (
-          <Row
-            label="Activity load"
-            value={
-              session.activity.metrics
-                ? `${session.activity.metrics.loadIndex} · ${session.activity.metrics.loadLevel}`
-                : 'Not calculated'
-            }
-            icon="speedometer-outline"
-          />
-        ) : null}
-        {activityInProgress ? (
-          <Row
-            label="Live samples"
-            value={String(session.activity.sampleCount)}
-            icon="pulse-outline"
-          />
-        ) : null}
-        <Button
-          disabled={!baselineComplete}
-          label={
-            activityComplete
-              ? 'View completed activity'
-              : activityInProgress
-                ? 'Return to activity'
-                : 'Set up activity'
-          }
-          icon={activityComplete ? 'analytics-outline' : activityInProgress ? 'play-circle-outline' : 'shirt-outline'}
-          onPress={() =>
-            router.push({
-              pathname: activityComplete
-                ? '/session/[sessionId]/activity-summary'
-                : activityInProgress
-                  ? '/session/[sessionId]/activity'
-                  : '/session/[sessionId]/sleeve-setup',
-              params: { sessionId },
-            })
-          }
-          variant="secondary"
-        />
-      </StageCard>
+      <View>
+        <Stage title="Before activity" state={baselineState}>
+          <CheckRow title="Baseline measurement" state={baselineState} status={baselineComplete ? 'Complete' : closed ? 'Incomplete' : getCheckpointStatus(session.baseline) === 'needsCheckIn' ? 'Check-in needed' : 'In progress'} detail={baselineState === 'current' ? progressDetail(session.baseline) : undefined} disabled={closed && !baselineComplete} onPress={() => openCheck('baseline')} />
+        </Stage>
+        <Stage title="Activity" state={activityState}>
+          <CheckRow title="Activity recording" state={activityState} status={activityComplete ? `Complete · ${Math.floor(session.activity.elapsedSeconds / 60)} min` : session.activity.status === 'paused' ? 'Paused' : activityInProgress ? 'Recording' : activityState === 'current' ? 'Ready to start' : 'Not started'} detail={activityState === 'current' ? activityInProgress ? 'Return to your recording' : 'Set up your sleeve to begin' : undefined} disabled={!baselineComplete || (closed && !activityComplete)} onPress={openActivity} />
+        </Stage>
+        <Stage title="After activity" state={recoveryState} last>
+          <View style={styles.checks}>
+            {recoveryCheckpoints.map((checkpoint) => {
+              const record = session.recovery[checkpoint];
+              const status = getCheckpointStatus(record);
+              const done = status === 'complete';
+              const current = recoveryState === 'current' && checkpoint === nextCheckpoint;
+              return <CheckRow key={checkpoint} title={checkpoint === '0' ? 'Post activity' : `${checkpoint} min after`} state={done ? 'complete' : current ? 'current' : 'pending'} status={done ? 'Complete' : status === 'needsCheckIn' ? 'Check-in needed' : status === 'partial' ? 'In progress' : current ? 'Up next' : 'Not started'} detail={current ? progressDetail(record) : undefined} disabled={!activityComplete || (closed && !done)} onPress={() => openCheck(checkpoint)} />;
+            })}
+          </View>
+        </Stage>
+      </View>
 
-      <StageCard
-        number={3}
-        title="After activity"
-        status={allRecoveryComplete ? 'Complete' : activityComplete ? 'In progress' : 'Locked'}
-        tone={allRecoveryComplete ? 'complete' : activityComplete ? 'active' : 'pending'}>
-        {recoveryCheckpoints.map((checkpoint) => {
-          const record = session.recovery[checkpoint];
-          const checkpointStatus = getCheckpointStatus(record);
-          const complete = checkpointStatus === 'complete';
-          const partiallyComplete = checkpointStatus === 'partial';
-          const recoveryAssessment = assessRecoveryCheckpoint(session, checkpoint);
-          const label = checkpoint === '0' ? 'Post activity' : `${checkpoint} min`;
-          const status = complete
-            ? getRecoveryRangeLabel(recoveryAssessment.status)
-            : checkpointStatus === 'needsCheckIn'
-              ? 'Check-in needed'
-              : partiallyComplete
-              ? `${record.left ? 'Left' : 'Right'} knee complete`
-              : activityComplete
-                ? 'Pending'
-                : 'Locked';
-          return (
-            <TimelineItem
-              key={checkpoint}
-              disabled={!activityComplete}
-              label={label}
-              status={status}
-              tone={
-                complete
-                  ? recoveryAssessment.status === 'withinBaselineRange'
-                    ? 'complete'
-                    : recoveryAssessment.status === 'aboveBaselineRange'
-                      ? 'warning'
-                      : 'info'
-                  : checkpointStatus === 'needsCheckIn'
-                    ? 'active'
-                    : partiallyComplete
-                    ? 'active'
-                    : activityComplete
-                      ? 'pending'
-                      : 'pending'
-              }
-              onPress={() => openCheckpoint(checkpoint)}
-            />
-          );
-        })}
-      </StageCard>
-
-      {confirmEnd ? (
-        <Card>
-          <SectionTitle>{sessionComplete ? 'Complete this session?' : 'End this session early?'}</SectionTitle>
-          <Notice
-            title="Your recorded data will be kept"
-            body="The session will leave the Training home. Measurements already saved on this device will not be deleted."
-            tone="warning"
-          />
-          <Button
-            label={sessionComplete ? 'Complete session' : 'End session early'}
-            onPress={() => {
-              endSession(sessionId, !sessionComplete);
-              router.dismissTo('/');
-            }}
-          />
-          <Button label="Keep session open" onPress={() => setConfirmEnd(false)} variant="secondary" />
-        </Card>
-      ) : (
-        <Button
-            label={sessionComplete ? 'Complete session' : 'End current session'}
-          icon="stop-circle-outline"
-          onPress={() => setConfirmEnd(true)}
-          variant="danger"
-        />
-      )}
-    </Page>
-  );
+      <View style={styles.actions}>
+        <Button label={primaryLabel} variant="highlight" onPress={continueSession} />
+        {!closed && !complete && !confirmEnd ? <Button label="End session early" variant="secondary" onPress={() => setConfirmEnd(true)} /> : null}
+      </View>
+      {confirmEnd ? <Card>
+        <SectionTitle>{complete ? 'Complete this session?' : 'End this session early?'}</SectionTitle>
+        <Notice title="Your recorded data will be kept" body="Measurements already saved on this device will not be deleted." tone="warning" />
+        <Button label={complete ? 'Complete session' : 'End session early'} onPress={() => { endSession(sessionId, !complete); router.dismissTo('/'); }} />
+        <Button label="Keep session open" onPress={() => setConfirmEnd(false)} variant="secondary" />
+      </Card> : null}
+    </View>
+  </Page>;
 }
+
+const styles = StyleSheet.create({
+  container: { width: '100%', maxWidth: 600, alignSelf: 'center', gap: 24 },
+  heading: { gap: 8 },
+  eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 2, color: '#397980' },
+  title: { fontSize: 27, lineHeight: 34, fontWeight: '800', color: '#102C31' },
+  date: { fontWeight: '400', color: '#5B7479' },
+  subtitle: { fontSize: 14, lineHeight: 21, color: '#58767C' },
+  stage: { flexDirection: 'row', gap: 12 },
+  rail: { width: 20, alignItems: 'center', paddingTop: 4 },
+  line: { width: 1.5, flex: 1, backgroundColor: '#C0D6DA', marginTop: 5, marginBottom: 5 },
+  completeLine: { backgroundColor: '#6C9BA2' },
+  stageBody: { flex: 1, minWidth: 0, paddingBottom: 22, gap: 10 },
+  stageTitle: { fontSize: 18, lineHeight: 24, fontWeight: '700', color: '#15383E' },
+  marker: { width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: '#A2BCC2', alignItems: 'center', justifyContent: 'center', backgroundColor: '#EEF5F6' },
+  smallMarker: { width: 18, height: 18, borderRadius: 9 },
+  completeMarker: { backgroundColor: teal, borderColor: teal },
+  currentMarker: { backgroundColor: lime, borderColor: lime },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: teal },
+  checks: { gap: 5, backgroundColor: '#F8FCFD', borderRadius: 20, padding: 5 },
+  checkRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#F8FCFD', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 15, minHeight: 72 },
+  currentRow: { backgroundColor: teal },
+  rowText: { flex: 1, minWidth: 0, gap: 4 },
+  rowTitle: { fontSize: 15, lineHeight: 20, fontWeight: '700', color: '#15383E' },
+  status: { fontSize: 12, lineHeight: 17, color: '#58747A' },
+  detail: { fontSize: 12, lineHeight: 18, color: '#58747A', marginTop: 3 },
+  white: { color: '#FFFFFF' },
+  lime: { color: lime, fontWeight: '600' },
+  light: { color: '#D0E7EB' },
+  pressed: { opacity: 0.75 },
+  actions: { gap: 10 },
+});
