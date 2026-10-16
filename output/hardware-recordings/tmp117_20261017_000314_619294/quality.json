@@ -1,0 +1,40 @@
+{
+  "source": "real TMP117 serial measurements",
+  "port": "/dev/cu.usbmodem5CF80461341",
+  "sample_count": 122,
+  "capture_span_s": 119.8936,
+  "completed_120s": true,
+  "stopped_early_or_error": false,
+  "observed_hz_from_device_intervals": 1.0091743119266054,
+  "median_device_interval_ms": 1000,
+  "max_device_interval_ms": 1900,
+  "missing_serial_sequence_numbers": 0,
+  "resets_or_time_reversals": 0,
+  "duplicate_samples": 0,
+  "malformed_sample_lines": 1,
+  "device_error_counter_first": 0,
+  "device_error_counter_max": 0,
+  "diagnostics": [],
+  "note": "Module temperature only. Phases are operator prompts, not detected contact events. Not a clinical calibration.",
+  "rest": {
+    "samples": 30,
+    "first_C": 26.07,
+    "last_C": 25.828,
+    "min_C": 25.828,
+    "max_C": 26.07
+  },
+  "contact": {
+    "samples": 31,
+    "first_C": 25.82,
+    "last_C": 33.812,
+    "min_C": 25.805,
+    "max_C": 33.812
+  },
+  "release": {
+    "samples": 61,
+    "first_C": 33.859,
+    "last_C": 26.883,
+    "min_C": 26.883,
+    "max_C": 33.859
+  }
+}
