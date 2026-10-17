@@ -8,6 +8,8 @@ import {
 } from 'react';
 
 import type {
+  ActivityTimelinePoint,
+  MeasurementSource,
   CheckpointRecord,
   CreateSessionInput,
   KneeMeasurement,
@@ -61,7 +63,7 @@ interface SessionStoreValue extends SessionState {
     symptoms: SymptomRecord,
   ) => void;
   saveMeasurement: (measurement: KneeMeasurement) => void;
-  saveActivitySampleCount: (sessionId: string, sampleCount: number) => void;
+  saveActivitySampleCount: (sessionId: string, sampleCount: number, timeline?: ActivityTimelinePoint[], source?: MeasurementSource) => void;
   startActivity: (sessionId: string, nowIso?: string) => void;
 }
 
@@ -253,12 +255,14 @@ export function SessionStoreProvider({ children }: { children: ReactNode }) {
     }));
   }
 
-  function saveActivitySampleCount(sessionId: string, sampleCount: number) {
+  function saveActivitySampleCount(sessionId: string, sampleCount: number, timeline?: ActivityTimelinePoint[], source?: MeasurementSource) {
     updateSession(sessionId, (session) => ({
       ...session,
       activity: {
         ...session.activity,
         sampleCount: Math.max(session.activity.sampleCount, Math.floor(sampleCount)),
+        timeline: timeline ?? session.activity.timeline,
+        source: source ?? session.activity.source,
       },
     }));
   }

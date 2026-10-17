@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Pressable, Text } from 'react-native';
 
 import { colors } from '@/theme/tokens';
+import { AppIcon } from '@/components/icons';
 import { SessionStoreProvider } from '@/state/session-store';
 
 export default function RootLayout() {
@@ -48,7 +49,20 @@ export default function RootLayout() {
         />
         <Stack.Screen
           name="session/[sessionId]/activity"
-          options={{ title: 'Activity', headerBackVisible: false }}
+          options={{
+            title: 'Activity',
+            headerTitleAlign: 'center',
+            headerBackVisible: false,
+            headerRight: () => (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Back to Home"
+                onPress={() => router.dismissTo('/')}
+                style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+                <AppIcon name="home-outline" size={23} color={colors.accent} />
+              </Pressable>
+            ),
+          }}
         />
         <Stack.Screen
           name="session/[sessionId]/activity-summary"
@@ -56,7 +70,17 @@ export default function RootLayout() {
         />
         <Stack.Screen
           name="session/[sessionId]/summary"
-          options={{ title: 'Session summary' }}
+          options={{
+            title: 'Session summary',
+            headerTitleAlign: 'center',
+            headerRight: () => (
+              <Pressable accessibilityRole="button" accessibilityLabel="Back to Home"
+                onPress={() => router.dismissTo('/')}
+                style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+                <AppIcon name="home-outline" size={23} color={colors.accent} />
+              </Pressable>
+            ),
+          }}
         />
         <Stack.Screen name="history/compare" options={{ title: 'Compare sessions' }} />
         <Stack.Screen

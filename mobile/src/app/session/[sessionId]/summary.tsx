@@ -1,330 +1,80 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { View } from 'react-native';
-
-import { RecoveryLineChart } from '@/components/recovery-line-chart';
-import {
-  ActivityBadge,
-  Button,
-  Card,
-  Label,
-  MetricTile,
-  Notice,
-  Page,
-  PageHeading,
-  Row,
-  SectionTitle,
-  StatusTag,
-  Value,
-  wireframeStyles,
-} from '@/components/ui';
+import { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { AppIcon } from '@/components/icons';
+import { ActivityTimelineCard } from '@/components/activity-timeline-card';
+import { SessionTrendChart, kneeColors } from '@/components/session-trend-chart';
+import { Button, Page, PageHeading, Row } from '@/components/ui';
 import { recoveryCheckpoints } from '@/domain/models';
-import {
-  getCompletedRecoveryCount,
-  getLastCompletedRecoveryMinutes,
-  getPainSeries,
-  getStiffnessSeries,
-  getSwellingSeries,
-} from '@/domain/session-selectors';
-import {
-  getCircumferenceResponseSeries,
-  getCircumferenceResponse,
-  getTemperatureDeltaSeries,
-  getTemperatureResponse,
-} from '@/domain/recovery-metrics';
-import {
-  assessRecoveryCheckpoint,
-  getRecoveryRangeLabel,
-  getRecoveryTime,
-  getRecoveryTimeLabel,
-} from '@/domain/recovery-status';
+import { getCompletedRecoveryCount } from '@/domain/session-selectors';
+import { getCircumferenceResponseSeries, getTemperatureDeltaSeries } from '@/domain/recovery-metrics';
 import { useSessionStore } from '@/state/session-store';
-import {
-  formatDuration,
-  formatScore,
-  formatSignedPercent,
-  formatSignedTemperature,
-} from '@/utils/format';
-
-const activityNames: Record<string, string> = {
-  badminton: 'Badminton',
-  frisbee: 'Frisbee',
-  gym: 'Gym',
-  other: 'Other',
-  running: 'Running',
-  tennis: 'Tennis',
-};
-
-const chartLabels = ['Before', 'Post', '15m', '30m', '45m', '60m'];
-const swellingLabels = ['None', 'Mild', 'Moderate', 'Significant'];
+import { colors } from '@/theme/tokens';
 
 export default function SessionSummaryScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
   const { sessions } = useSessionStore();
+  const [expanded, setExpanded] = useState(false);
   const session = sessions[sessionId];
-
-  if (!session) {
-    return (
-      <Page>
-        <PageHeading
-          eyebrow="Session summary"
-          title="Session not found"
-          description="This session is no longer stored on this device."
-        />
-        <Button label="Return to Training" onPress={() => router.dismissTo('/')} />
-      </Page>
-    );
-  }
-
-  const completeChecks = getCompletedRecoveryCount(session);
-  const duration = formatDuration(session.activity.elapsedSeconds);
-  const activity = activityNames[session.activityType];
-  const endedEarly = session.endedEarly;
+  if (!session) return <Page><PageHeading title="Session not found" /><Button label="Return to Training" onPress={() => router.dismissTo('/')} /></Page>;
+  const checks = getCompletedRecoveryCount(session);
+  const seconds = Math.max(0, Math.floor(session.activity.elapsedSeconds));
+  const duration = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  const records = [session.baseline, ...recoveryCheckpoints.map((c) => session.recovery[c])];
+  const sources = new Set(records.flatMap((r) => [r?.left?.source, r?.right?.source]).filter(Boolean));
+  const source = sources.size > 1 ? 'Mixed data' : sources.has('mock') ? 'Demo data' : sources.has('manual') ? 'Manual data' : sources.has('bluetooth') ? 'Sensor data' : 'No readings';
   const metrics = session.activity.metrics;
-  const swellingValues = getSwellingSeries(session);
-  const painValues = getPainSeries(session);
-  const stiffnessValues = getStiffnessSeries(session);
-  const leftStretchResponses = getCircumferenceResponseSeries(session, 'left');
-  const rightStretchResponses = getCircumferenceResponseSeries(session, 'right');
-  const leftTemperatureDeltas = getTemperatureDeltaSeries(session, 'left');
-  const rightTemperatureDeltas = getTemperatureDeltaSeries(session, 'right');
-  const trackedMinutes = getLastCompletedRecoveryMinutes(session);
-  const postActivity = session.recovery['0'];
-  const circumferenceResponse = getCircumferenceResponse(session, '0');
-  const temperatureResponse = getTemperatureResponse(session, '0');
-  const recoveryTime = getRecoveryTime(session);
-  const recoveryTimeLabel = getRecoveryTimeLabel(recoveryTime);
-  const summaryHighlight = endedEarly
-    ? 'ENDED EARLY'
-    : recoveryTime.status === 'recovered'
-      ? recoveryTime.minutes === 0
-        ? 'WITHIN RANGE POST ACTIVITY'
-        : `WITHIN RANGE · ${recoveryTime.minutes} MIN`
-      : recoveryTime.status === 'notRecovered'
-        ? 'ABOVE RANGE AT 60 MIN'
-        : trackedMinutes === null
-          ? 'ACTIVITY RECORDED'
-          : `${trackedMinutes} MIN TRACKED`;
-  const postFeelingsRecorded = Boolean(postActivity?.symptomsRecordedAt);
-
-  return (
-    <Page>
-      <PageHeading
-        eyebrow="Session summary"
-        title={endedEarly ? 'Session ended with partial data' : `${activity} session`}
-        highlight={summaryHighlight}
-        description={`${activity} · Saved on this device`}
-      />
-      <ActivityBadge activity={session.activityType} label={activity} />
-
-      <Card variant="data">
-        <StatusTag label={endedEarly ? 'Partial record' : 'Session complete'} tone={endedEarly ? 'warning' : 'complete'} />
-        <Label inverse>Activity Load Index</Label>
-        <Value inverse>
-          {metrics ? `${metrics.loadIndex} · ${metrics.loadLevel}` : 'Not calculated'}
-        </Value>
-        <View style={wireframeStyles.choiceGrid}>
-          <MetricTile label="Duration" value={duration} highlighted />
-          <MetricTile
-            label="Movement intensity"
-            value={metrics ? String(metrics.movementIntensity) : '—'}
-            unit="/ 10"
-          />
-        </View>
-        <Row
-          label="Acceleration peaks"
-          value={metrics ? String(metrics.accelerationPeakCount) : '—'}
-          icon="trending-up-outline"
-          inverse
-        />
-        <Row
-          label="Sharp decelerations"
-          value={metrics ? String(metrics.decelerationEventCount) : '—'}
-          icon="trending-down-outline"
-          inverse
-        />
-        <Row
-          label="Impact-like events"
-          value={metrics ? String(metrics.impactLikeEventCount) : '—'}
-          icon="flash-outline"
-          inverse
-        />
-      </Card>
-
-      <Card>
-        <SectionTitle>Immediate response</SectionTitle>
-        <View style={wireframeStyles.choiceGrid}>
-          <MetricTile
-            label="Right stretch response"
-            value={
-              circumferenceResponse.rightPercent === null
-                ? '—'
-                : formatSignedPercent(circumferenceResponse.rightPercent)
-            }
-          />
-          <MetricTile
-            label="Left stretch response"
-            value={
-              circumferenceResponse.leftPercent === null
-                ? '—'
-                : formatSignedPercent(circumferenceResponse.leftPercent)
-            }
-          />
-        </View>
-        <Row
-          label={`${circumferenceResponse.injuredSide === 'left' ? 'Left' : 'Right'} vs contralateral stretch`}
-          value={
-            circumferenceResponse.contralateralDifferencePercent === null
-              ? '—'
-              : formatSignedPercent(circumferenceResponse.contralateralDifferencePercent)
-          }
-          icon="git-compare-outline"
-        />
-        <Row
-          label="Right temperature change"
-          value={
-            temperatureResponse.rightDeltaCelsius === null
-              ? '—'
-              : formatSignedTemperature(temperatureResponse.rightDeltaCelsius)
-          }
-          icon="thermometer-outline"
-        />
-        <Row
-          label="Left temperature change"
-          value={
-            temperatureResponse.leftDeltaCelsius === null
-              ? '—'
-              : formatSignedTemperature(temperatureResponse.leftDeltaCelsius)
-          }
-          icon="thermometer-outline"
-        />
-        <Row
-          label={`${temperatureResponse.injuredSide === 'left' ? 'Left' : 'Right'} vs contralateral temperature`}
-          value={
-            temperatureResponse.currentAsymmetryCelsius === null
-              ? '—'
-              : formatSignedTemperature(temperatureResponse.currentAsymmetryCelsius)
-          }
-          icon="git-compare-outline"
-        />
-        <Row
-          label="Reported pain"
-          value={postFeelingsRecorded ? formatScore(postActivity.symptoms.pain) : '—'}
-          icon="fitness-outline"
-        />
-        <Row
-          label="Reported stiffness"
-          value={postFeelingsRecorded ? formatScore(postActivity.symptoms.stiffness) : '—'}
-          icon="body-outline"
-        />
-        <Row
-          label="Reported swelling"
-          value={postFeelingsRecorded ? postActivity.symptoms.swelling : '—'}
-          icon="water-outline"
-        />
-      </Card>
-
-      <Card>
-        <StatusTag
-          label={
-            recoveryTime.status === 'recovered'
-              ? 'Recovery point found'
-              : recoveryTime.status === 'notRecovered'
-                ? 'Above range at 60 min'
-                : 'Partial recovery data'
-          }
-          tone={
-            recoveryTime.status === 'recovered'
-              ? 'complete'
-              : recoveryTime.status === 'notRecovered'
-                ? 'warning'
-                : 'info'
-          }
-        />
-        <SectionTitle>Recovery overview</SectionTitle>
-        <View style={wireframeStyles.choiceGrid}>
-          <MetricTile label="Recovery time" value={recoveryTimeLabel} highlighted />
-          <MetricTile label="Checks completed" value={String(completeChecks)} unit="/ 5" />
-        </View>
-        {recoveryCheckpoints.map((checkpoint) => {
-          const assessment = assessRecoveryCheckpoint(session, checkpoint);
-          return (
-            <Row
-              key={checkpoint}
-              label={checkpoint === '0' ? 'Post activity' : `${checkpoint} min`}
-              value={getRecoveryRangeLabel(assessment.status)}
-              icon={
-                assessment.status === 'withinBaselineRange'
-                  ? 'checkmark-circle-outline'
-                  : assessment.status === 'aboveBaselineRange'
-                    ? 'alert-circle-outline'
-                    : 'remove-circle-outline'
-              }
-            />
-          );
-        })}
-      </Card>
-
-      <Card>
-        <SectionTitle>Recovery detail · Band stretch</SectionTitle>
-        <RecoveryLineChart
-          labels={chartLabels}
-          series={[
-            { label: 'Left knee', color: '#3976A8', values: leftStretchResponses },
-            { label: 'Right knee', color: '#B8643F', values: rightStretchResponses },
-          ]}
-          valueFormatter={formatSignedPercent}
-        />
-        <Notice
-          title="Relative Recovery Band response"
-          body="Values show percentage change from each knee's own pre-activity reading, not centimeters."
-          tone="info"
-        />
-      </Card>
-
-      <Card>
-        <SectionTitle>Recovery detail · Temperature</SectionTitle>
-        <RecoveryLineChart
-          labels={chartLabels}
-          series={[
-            { label: 'Left knee', color: '#3976A8', values: leftTemperatureDeltas },
-            { label: 'Right knee', color: '#B8643F', values: rightTemperatureDeltas },
-          ]}
-          valueFormatter={formatSignedTemperature}
-        />
-      </Card>
-
-      <Card>
-        <SectionTitle>Recovery detail · Pain and stiffness</SectionTitle>
-        <RecoveryLineChart
-          labels={chartLabels}
-          series={[
-            { label: 'Pain', color: '#B8643F', values: painValues },
-            { label: 'Stiffness', color: '#087885', values: stiffnessValues },
-          ]}
-          valueFormatter={(value) => `${value.toFixed(0)} / 10`}
-        />
-      </Card>
-
-      <Card>
-        <SectionTitle>Recovery detail · Reported swelling</SectionTitle>
-        <RecoveryLineChart
-          labels={chartLabels}
-          series={[{ label: 'Swelling', color: '#087885', values: swellingValues }]}
-          valueFormatter={(value) => swellingLabels[Math.max(0, Math.min(3, Math.round(value)))]}
-        />
-      </Card>
-
-      <Notice
-        title="Personal baseline still developing"
-        body="The prototype range uses ≤0.5% stretch response, ≤0.5% side difference, ≤0.3°C temperature change, ≤0.3°C response difference, pain/stiffness no more than +1, and swelling no higher than this session's baseline. More sessions are needed to establish a truly personal range."
-        tone="info"
-      />
-      <Notice
-        title="Not a medical diagnosis"
-        body="AfterMotion describes activity load and personal response trends. Clinical decisions remain with your care team."
-        tone="warning"
-      />
-      <Button label="Return to Training" onPress={() => router.dismissTo('/')} variant="highlight" icon="barbell-outline" />
-    </Page>
-  );
+  const activity = session.activityType === 'gym' ? 'Gym' : session.activityType.charAt(0).toUpperCase() + session.activityType.slice(1);
+  return <Page>
+    <View style={{ gap: 4 }}><Text style={styles.title}>{activity}</Text><Text style={styles.subtitle}>{new Date(session.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}{session.endedEarly ? ' · Ended early' : ''}</Text></View>
+    <View style={styles.summary}>
+      <View style={styles.statusIcon}><AppIcon name={session.status === 'complete' ? 'checkmark' : 'time-outline'} color={kneeColors[0]} size={23} /></View>
+      <View style={styles.stat}><Text style={styles.statLabel}>Duration</Text><Text style={styles.statValue}>{duration}</Text></View>
+      <View style={styles.stat}><Text style={styles.statLabel}>Checks</Text><Text style={styles.statValue}>{checks}<Text style={{ fontSize: 20 }}> / 5</Text></Text></View>
+    </View>
+    <View style={styles.legend}>{['Left knee', 'Right knee'].map((label, i) => <View key={label} style={styles.legendItem}><View style={[styles.legendLine, { backgroundColor: kneeColors[i] }]}><View style={{ width: 10, height: 10, backgroundColor: kneeColors[i], borderRadius: i === 0 ? 5 : 1 }} /></View><Text style={styles.subtitle}>{label}</Text></View>)}</View>
+    <ActivityTimelineCard activity={session.activity} />
+    {(['temperature', 'band'] as const).map((kind) => <View key={kind} style={styles.card}>
+      <View style={styles.chartHeading}><AppIcon name={kind === 'temperature' ? 'thermometer-outline' : 'resize-outline'} size={24} color={kneeColors[0]} /><View style={{ flex: 1, gap: 3 }}><Text style={styles.chartTitle}>{kind === 'temperature' ? 'Temperature change' : 'Swelling-related response'}</Text><Text style={styles.caption}>{kind === 'temperature' ? '°C from baseline' : 'Band stretch change (%)'}</Text></View></View>
+      <Text style={styles.source}>{source}</Text>
+      <SessionTrendChart left={kind === 'temperature' ? getTemperatureDeltaSeries(session, 'left') : getCircumferenceResponseSeries(session, 'left')} right={kind === 'temperature' ? getTemperatureDeltaSeries(session, 'right') : getCircumferenceResponseSeries(session, 'right')} unit={kind === 'temperature' ? '°C' : '%'} />
+    </View>)}
+    <View style={styles.card}>
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setExpanded(!expanded)} style={styles.toggle}><Text style={styles.chartTitle}>Session details</Text><AppIcon name={expanded ? 'chevron-up' : 'chevron-down'} color={kneeColors[0]} size={22} /></Pressable>
+      {expanded && <View style={{ gap: 12, paddingTop: 8 }}>
+        <Text style={styles.caption}>Each knee uses its own pre-activity reading as baseline. Band response shows stretch change, not a direct swelling measurement.</Text>
+        <Row label="Activity load" value={metrics ? `${metrics.loadIndex} · ${metrics.loadLevel}` : '—'} />
+        <Row label="Movement intensity" value={metrics ? `${metrics.movementIntensity} / 10` : '—'} />
+        <Row label="Acceleration peaks" value={metrics ? String(metrics.accelerationPeakCount) : '—'} />
+        <Row label="Sharp decelerations" value={metrics ? String(metrics.decelerationEventCount) : '—'} />
+        <Row label="Impact-like events" value={metrics ? String(metrics.impactLikeEventCount) : '—'} />
+        {records.map((record, i) => <View key={i} style={styles.checkpoint}>
+          <Text style={styles.checkpointTitle}>{i === 0 ? 'Before activity' : i === 1 ? 'Post activity' : `${recoveryCheckpoints[i - 1]} min after`}</Text>
+          {(['left', 'right'] as const).map((side) => { const r = record?.[side]; return <Text key={side} style={styles.caption}>{side === 'left' ? 'Left' : 'Right'}: {r ? `${r.temperatureCelsius.toFixed(1)}°C · Band ${r.stretchValue.toFixed(2)} · ${new Date(r.recordedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Not measured'}</Text>; })}
+          <Text style={styles.caption}>{record?.symptomsRecordedAt ? `Pain ${record.symptoms.pain}/10 · Stiffness ${record.symptoms.stiffness}/10\nReported swelling: ${record.symptoms.swelling}` : 'Feelings not recorded'}</Text>
+        </View>)}
+      </View>}
+    </View>
+  </Page>;
 }
+
+const styles = StyleSheet.create({
+  title: { fontSize: 27, fontWeight: '700', color: kneeColors[0] },
+  subtitle: { fontSize: 15, color: '#56727C' },
+  summary: { backgroundColor: kneeColors[0], borderRadius: 18, paddingHorizontal: 18, paddingVertical: 23, minHeight: 108, flexDirection: 'row', alignItems: 'center', gap: 16 },
+  statusIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.highlight, alignItems: 'center', justifyContent: 'center' },
+  stat: { flex: 1, borderLeftWidth: 1, borderLeftColor: '#598590', paddingLeft: 16, gap: 6 },
+  statLabel: { color: '#C7E2E9', fontSize: 16 },
+  statValue: { color: 'white', fontSize: 27, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 24 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  legendLine: { width: 30, height: 2, alignItems: 'center', justifyContent: 'center' },
+  card: { backgroundColor: 'white', borderRadius: 20, padding: 16, gap: 8 },
+  chartHeading: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  chartTitle: { fontSize: 18, fontWeight: '700', color: kneeColors[0], flexShrink: 1 },
+  caption: { fontSize: 13, lineHeight: 19, color: '#56727C' },
+  source: { color: '#718489', fontSize: 11, textAlign: 'right' },
+  toggle: { minHeight: 32, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  checkpoint: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12, gap: 5 },
+  checkpointTitle: { color: kneeColors[0], fontSize: 15, fontWeight: '600' },
+});

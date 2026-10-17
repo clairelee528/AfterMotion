@@ -70,7 +70,16 @@ export interface ActivityMetrics {
   loadLevel: LoadLevel;
 }
 
+export interface ActivityTimelinePoint {
+  elapsedSeconds: number;
+  intensity: number;
+  impactCount: number;
+  sampleCount: number;
+}
+
 export interface ActivityRecord {
+  timeline?: ActivityTimelinePoint[];
+  source?: MeasurementSource;
   status: ActivityStatus;
   elapsedSeconds: number;
   sampleCount: number;

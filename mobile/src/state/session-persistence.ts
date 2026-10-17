@@ -181,6 +181,13 @@ function normalizeSession(value: unknown, fallbackId: string): Session | null {
     endedEarly: value.endedEarly === true,
     baseline: normalizeCheckpoint(value.baseline, id, 'baseline', source),
     activity: {
+      source: measurementSources.includes(activity.source as MeasurementSource) ? activity.source as MeasurementSource : undefined,
+      timeline: Array.isArray(activity.timeline) ? activity.timeline.filter((p) => isRecord(p) && typeof p.elapsedSeconds === 'number' && Number.isFinite(p.elapsedSeconds) && p.elapsedSeconds >= 0 && typeof p.intensity === 'number' && Number.isFinite(p.intensity)).map((p) => ({
+        elapsedSeconds: p.elapsedSeconds as number,
+        intensity: Math.max(0, Math.min(10, p.intensity as number)),
+        impactCount: Math.max(0, Math.floor(finiteNumber(p.impactCount, 0))),
+        sampleCount: Math.max(1, Math.floor(finiteNumber(p.sampleCount, 1))),
+      })).sort((a, b) => a.elapsedSeconds - b.elapsedSeconds) : undefined,
       status: activityStatus,
       elapsedSeconds: Math.max(0, finiteNumber(activity.elapsedSeconds, 0)),
       sampleCount: Math.max(

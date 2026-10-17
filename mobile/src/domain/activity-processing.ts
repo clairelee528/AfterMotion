@@ -1,4 +1,5 @@
 import type { ActivitySample } from '../data/activity-source';
+import type { ActivityTimelinePoint } from './models';
 
 const FILTER_ALPHA = 0.2;
 const ACCELERATION_PEAK_THRESHOLD_G = 0.28;
@@ -23,6 +24,18 @@ function eventAllowed(timestampMs: number, previousTimestampMs: number | null): 
 }
 
 export class ActivitySignalProcessor {
+  private timeline: ActivityTimelinePoint[];
+  constructor(timeline: ActivityTimelinePoint[] = []) {
+    this.timeline = timeline.map((point) => ({ ...point }));
+  }
+
+  getTimeline(): ActivityTimelinePoint[] {
+    return this.timeline.map((point) => ({ ...point }));
+  }
+
+  restoreTimeline(timeline: ActivityTimelinePoint[] = []): void {
+    if (this.timeline.length === 0) this.timeline = timeline.map((point) => ({ ...point }));
+  }
   private sampleCount = 0;
   private dynamicEnergy = 0;
   private filteredMagnitude: number | null = null;
@@ -36,7 +49,8 @@ export class ActivitySignalProcessor {
   private lastDecelerationAtMs: number | null = null;
   private lastImpactAtMs: number | null = null;
 
-  addSample(sample: ActivitySample): void {
+  addSample(sample: ActivitySample, elapsedSeconds?: number): void {
+    const previousImpacts = this.impactLikeEventCount;
     const rawMagnitude = magnitude(
       sample.accelerationX,
       sample.accelerationY,
@@ -88,6 +102,18 @@ export class ActivitySignalProcessor {
     this.previousPreviousDynamicMagnitude = this.previousDynamicMagnitude;
     this.previousDynamicMagnitude = dynamicMagnitude;
     this.previousTimestampMs = sample.timestampMs;
+    if (elapsedSeconds !== undefined && Number.isFinite(elapsedSeconds)) {
+      const bucket = Math.floor(Math.max(0, elapsedSeconds) / 5) * 5;
+      let point = this.timeline[this.timeline.length - 1];
+      if (!point || point.elapsedSeconds !== bucket) {
+        point = { elapsedSeconds: bucket, intensity: 0, impactCount: 0, sampleCount: 0 };
+        this.timeline.push(point);
+      }
+      const intensity = Math.min(10, dynamicMagnitude * 10);
+      point.intensity = Math.sqrt((point.intensity ** 2 * point.sampleCount + intensity ** 2) / (point.sampleCount + 1));
+      point.sampleCount += 1;
+      point.impactCount += this.impactLikeEventCount - previousImpacts;
+    }
   }
 
   getFeatures(): ActivityFeatures {
@@ -105,10 +131,10 @@ export class ActivitySignalProcessor {
 
 const activeProcessors = new Map<string, ActivitySignalProcessor>();
 
-export function getActivitySignalProcessor(sessionId: string): ActivitySignalProcessor {
+export function getActivitySignalProcessor(sessionId: string, timeline: ActivityTimelinePoint[] = []): ActivitySignalProcessor {
   const existing = activeProcessors.get(sessionId);
   if (existing) return existing;
-  const processor = new ActivitySignalProcessor();
+  const processor = new ActivitySignalProcessor(timeline);
   activeProcessors.set(sessionId, processor);
   return processor;
 }

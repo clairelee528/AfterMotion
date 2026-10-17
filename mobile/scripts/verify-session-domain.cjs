@@ -756,6 +756,32 @@ async function main() {
   console.log('Session domain verification passed.');
 }
 
+function verifyActivityTimeline() {
+  const processor = new ActivitySignalProcessor();
+  for (let i = 0; i < 600; i += 1) {
+    processor.addSample(createMockActivitySample(i, i * 20), i / 50);
+  }
+  const timeline = processor.getTimeline();
+  assert.deepEqual(timeline.map((p) => p.elapsedSeconds), [0, 5, 10]);
+  assert.equal(timeline.reduce((sum, p) => sum + p.sampleCount, 0), 600);
+  assert.equal(timeline.reduce((sum, p) => sum + p.impactCount, 0), processor.getFeatures().impactLikeEventCount);
+  assert.ok(timeline.every((p) => p.intensity >= 0 && p.intensity <= 10));
+  const resumed = new ActivitySignalProcessor(timeline);
+  resumed.addSample(createMockActivitySample(600, 12000), 12);
+  assert.equal(resumed.getTimeline()[2].sampleCount, 101);
+  assert.equal(timeline[2].sampleCount, 100, 'Saved snapshot must not mutate');
+  const fixtures = createDemoSessionFixtures();
+  const fixture = Object.values(fixtures)[0];
+  fixture.activity.timeline = timeline;
+  fixture.activity.source = 'mock';
+  const state = { currentSessionId: null, sessions: { [fixture.id]: fixture } };
+  const restored = decodeSessionState(encodeSessionState(state));
+  assert.deepEqual(restored.sessions[fixture.id].activity.timeline, timeline);
+  assert.equal(restored.sessions[fixture.id].activity.source, 'mock');
+}
+
+verifyActivityTimeline();
+
 main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
